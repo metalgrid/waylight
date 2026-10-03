@@ -108,6 +108,57 @@ dialogs close on committed start, power execution, disconnection or shutdown. Ca
 can become stale; logind remains the final authority and call failures are displayed.
 **Do not test real power controls as part of isolated verification.**
 
+## Theming
+
+Colors, the background, the font and the element sizes of the sign-in view come from one theme
+object (`Theme.qml`). The built-in defaults are token-for-token the previous literals, so the
+stock look is unchanged. There is no theme picker and no flag: the greeter reads one optional
+JSON file at startup and otherwise uses the built-in presets or defaults.
+
+Search order (the first readable file wins; a readable but broken file still wins with defaults):
+
+1. `${XDG_CONFIG_HOME:-$HOME/.config}/waylight/theme.json`
+2. `/etc/waylight/theme.json`
+
+An annotated copy of every key is in [`examples/theme.json`](examples/theme.json). The file is
+plain JSON with four sections plus an optional preset:
+
+```json
+{
+  "preset": "dusk",
+  "colors":   { "accent": "#d9e2ff" },
+  "background": { "mode": "builtin", "image": "", "color": "#182b56", "top": "#182b56", "bottom": "#182b56" },
+  "font":     { "family": "sans-serif", "scale": 1.0 },
+  "layout":   { "panelMaxWidth": 580 }
+}
+```
+
+- `preset`: `dusk` (the stock look), `midnight` (near-black blues, dimmer fills) or `daylight`
+  (light frosted gradient, dark text). The preset applies first; explicit keys override it.
+- `background.mode`: `builtin` (embedded SVG), `image` (local file, drawn `PreserveAspectCrop`),
+  `solid` (`color`), or `gradient` (`top` to `bottom`). The translucent overlay above the
+  background is themed separately (`overlayTop`/`overlayBottom`).
+- `font.scale` multiplies every font size and the clock cap (0.5–2.0); `font.family` accepts any
+  family Qt can resolve.
+- `layout` is a bounded size set (clock/panel positions as window-height ratios, panel, tiles,
+  avatar, fields, radii, power buttons, bar margins). There is no free-form element placement.
+
+Validation is fail-open and can never prevent sign-in: a missing or malformed file means
+defaults; unknown keys are ignored; a wrong-typed value falls back to that key's default; colors
+must be `#rgb`, `#rgba`, `#rrggbb` or `#aarrggbb`; ratios are clamped to 0–0.9, sizes to
+1–2000 px and `font.scale` to 0.5–2.0. The complete token reference — every key, default,
+accepted values and what each token draws — is [THEMING.md](THEMING.md); the source of truth
+is `Theme.qml`, and the locked plan is [`.pi/THEME-PLAN.md`](.pi/THEME-PLAN.md). One text color outside the locked
+table, the session picker text, is also themed as `colors.textCombo` (default `#ecedf5`) so the
+light preset can stay readable.
+
+Not themed: the embedded SVG artwork (background.svg, power icons) and the bundled demo
+portraits are fixed files; the white power icons have little contrast on `daylight` (their
+focus/hover affordances remain themed). `--preview` loads the same theme files, presentation
+only. Themes apply at startup and presets can be switched at runtime by tests; there is no hot
+reload. Preset screenshots are produced only by the isolated offscreen QML tests into
+`/tmp/waylight-theme-checks/`.
+
 ## Authentication and lifecycle
 
 `src/controller.rs` owns the sole Unix socket on one background thread with a Tokio
@@ -229,6 +280,11 @@ empty/long answers, cancellation, disabled committed states, one-click/Space/Ent
 manual fallback, pending switches, confirmation decline/accept/revalidation, modal focus and
 late-discovery focus during prompts, and deterministic 150 ms presentation-timer boundaries
 (rapid-switch layout retention, delayed latest-intent status, and immediate failure/terminal states).
+Theme tests cover the token defaults against the locked literals, JSON overrides, color formats,
+unknown keys/presets, wrong types, clamping, fail-open file loading and first-existing-path
+selection, preset switching with WCAG contrast checks for `daylight`, and background modes.
+A dedicated harness also compared grabs of the previous `Main.qml` (from git HEAD) and the
+theme-token version at 1100×720 and 640×580; both were byte-identical.
 Coordinate inputs wait for layout polish. Tests also save
 only their own offscreen application content at 1100×720 and minimum 640×580 to
 `/tmp/waylight-login-ux-checks/` (manual, focused tile, selected/manual Password, modal,
