@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1200" viewBox="0 0 1920 1200">
+  <defs>
+    <linearGradient id="sky" x2="0.8" y2="1"><stop stop-color="#182b56"/><stop offset=".5" stop-color="#826a98"/><stop offset="1" stop-color="#f4b09d"/></linearGradient>
+    <linearGradient id="far" x2=".3" y2="1"><stop stop-color="#b68aa4"/><stop offset="1" stop-color="#574b82"/></linearGradient>
+    <linearGradient id="mid" x2=".8" y2="1"><stop stop-color="#56517f"/><stop offset="1" stop-color="#253752"/></linearGradient>
+    <linearGradient id="near" x2="1" y2="1"><stop stop-color="#263e59"/><stop offset="1" stop-color="#101f35"/></linearGradient>
+    <radialGradient id="glow"><stop stop-color="#ffceab" stop-opacity=".65"/><stop offset="1" stop-color="#ffceab" stop-opacity="0"/></radialGradient>
+  </defs>
+  <path fill="url(#sky)" d="M0 0h1920v1200H0z"/>
+  <ellipse fill="url(#glow)" cx="1480" cy="480" rx="800" ry="650"/>
+  <path fill="url(#far)" d="M0 860Q250 680 430 690T810 510T1190 580T1560 440T1920 610V1200H0Z"/>
+  <path fill="url(#mid)" d="M0 680Q250 640 530 865T1030 850T1490 700T1920 800V1200H0Z"/>
+  <path fill="url(#near)" d="M0 1090Q260 820 520 960T1080 1020T1500 920T1920 1060V1200H0Z"/>
+</svg>

@@ -1,0 +1,11 @@
+# PROPOSAL ONLY. Not installed or tested with real PAM / VT ownership.
+# Requires a separately approved deployment and an existing dedicated greeter
+# account plus /var/lib/waylight owned by that account with mode 0700.
+[terminal]
+vt = 1
+
+[default_session]
+# -s preserves VT switching. Keep Cage in the foreground; do not append '&'.
+# The greeter's exit must terminate Cage before greetd starts the user session.
+command = "/usr/bin/cage -s -- /usr/local/bin/waylight-greeter --state-dir /var/lib/waylight"
+user = "greeter"
