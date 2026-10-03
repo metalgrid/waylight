@@ -5,6 +5,8 @@ use crate::{
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QString, QStringList};
 use std::{
+    ffi::OsStr,
+    path::PathBuf,
     pin::Pin,
     sync::{Mutex, OnceLock, mpsc},
 };
@@ -15,6 +17,30 @@ pub struct Bridge {
     pub preview: bool,
 }
 pub static BRIDGE: OnceLock<Mutex<Option<Bridge>>> = OnceLock::new();
+
+/// Ordered theme.json candidates: the user's config directory first, then the
+/// system path. Pure helper taking environment values as parameters so tests
+/// never mutate the environment. QML parses this JSON array and loads the
+/// first readable file; presentation only, never an authentication input.
+fn theme_paths_json(xdg_config_home: Option<&OsStr>, home: Option<&OsStr>) -> String {
+    let mut paths = Vec::new();
+    let user = xdg_config_home
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            home.filter(|value| !value.is_empty())
+                .map(|home| PathBuf::from(home).join(".config"))
+        });
+    if let Some(base) = user {
+        paths.push(base.join("waylight").join("theme.json"));
+    }
+    paths.push(PathBuf::from("/etc/waylight/theme.json"));
+    let encoded: Vec<String> = paths
+        .iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect();
+    serde_json::to_string(&encoded).expect("path list serialization cannot fail")
+}
 
 #[cxx_qt::bridge]
 pub mod ffi {
@@ -44,6 +70,7 @@ pub mod ffi {
         #[qproperty(u32, capabilities)]
         #[qproperty(bool, preview)]
         #[qproperty(bool, closing)]
+        #[qproperty(QString, theme_paths, cxx_name = "themePaths")]
         type Backend = super::BackendRust;
         #[qinvokable]
         fn poll(self: Pin<&mut Backend>);
@@ -103,6 +130,7 @@ pub struct BackendRust {
     token: u32,
     cancelling: bool,
     closing: bool,
+    theme_paths: QString,
     pending: Option<Intent>,
 }
 impl Default for BackendRust {
@@ -127,6 +155,10 @@ impl Default for BackendRust {
             token: 0,
             cancelling: false,
             closing: false,
+            theme_paths: QString::from(theme_paths_json(
+                std::env::var_os("XDG_CONFIG_HOME").as_deref(),
+                std::env::var_os("HOME").as_deref(),
+            )),
             pending: None,
         }
     }
@@ -375,5 +407,39 @@ impl ffi::Backend {
     }
     pub fn power(self: Pin<&mut Self>, action: i32) {
         self.request(Intent::Power(action));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn theme_paths_search_order_is_user_then_system() {
+        let system = "/etc/waylight/theme.json";
+        assert_eq!(
+            theme_paths_json(Some(OsStr::new("/custom/cfg")), Some(OsStr::new("/home/u"))),
+            format!("[\"/custom/cfg/waylight/theme.json\",\"{system}\"]")
+        );
+        // An empty XDG_CONFIG_HOME falls back to $HOME/.config.
+        assert_eq!(
+            theme_paths_json(Some(OsStr::new("")), Some(OsStr::new("/home/u"))),
+            format!("[\"/home/u/.config/waylight/theme.json\",\"{system}\"]")
+        );
+        assert_eq!(
+            theme_paths_json(None, Some(OsStr::new("/home/u"))),
+            format!("[\"/home/u/.config/waylight/theme.json\",\"{system}\"]")
+        );
+        // Without any usable user base only the system path remains.
+        assert_eq!(theme_paths_json(None, None), format!("[\"{system}\"]"));
+        assert_eq!(
+            theme_paths_json(Some(OsStr::new("")), Some(OsStr::new(""))),
+            format!("[\"{system}\"]")
+        );
+        // JSON escaping survives unusual but legal directory names.
+        assert_eq!(
+            theme_paths_json(Some(OsStr::new("/a\"b\\c")), None),
+            "[\"/a\\\"b\\\\c/waylight/theme.json\",\"/etc/waylight/theme.json\"]"
+        );
     }
 }

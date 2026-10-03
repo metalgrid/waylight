@@ -74,9 +74,12 @@ fn main() -> std::process::ExitCode {
         }
     };
     // Suppress Qt's disk cache in both modes (especially isolated preview).
-    // Set before spawning threads; no other environment mutation is performed.
+    // QML reads the optional theme.json through XHR; Qt 6 disables local file
+    // reads by default and this opt-in is presentation-only. Both are set
+    // before spawning threads; no other environment mutation is performed.
     unsafe {
         std::env::set_var("QML_DISABLE_DISK_CACHE", "1");
+        std::env::set_var("QML_XHR_ALLOW_FILE_READ", "1");
     }
     let preview = config.preview;
     let (commands, rx) = tokio::sync::mpsc::channel(16);
