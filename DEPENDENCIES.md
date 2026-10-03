@@ -1,12 +1,11 @@
 # Dependency licensing
 
-No license has been selected for this project's original code or artwork.
-Do not assume permission to redistribute a combined executable merely because it builds.
+Waylight's original code and artwork are licensed **GPL-3.0-only** (`LICENSE`, Cargo
+`license = "GPL-3.0-only"`). Copyright 2026 Iskren Hadzhinedev.
 
 **`greetd_ipc` 0.10.3 declares `GPL-3.0-only`, not LGPL.** It is linked into this executable,
-so distribution needs a GPLv3-compatible licensing/compliance decision, corresponding-source
-and notice arrangements. Using just its protocol types does not remove that obligation.
-This document records the dependency, not a choice of license for the user's project.
+which is compatible with the project license. Any distribution of binaries still carries the
+customary GPLv3 duties: corresponding source and notice preservation.
 
 Direct dependencies from `cargo metadata --locked`:
 

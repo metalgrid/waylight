@@ -5,6 +5,8 @@ It now speaks greetd IPC, handles PAM conversations, discovers Wayland sessions,
 logind-authorized power controls. **It is not installed. SDDM, greetd, PAM and polkit were not changed.**
 Fingerprint integration is future work in [`.pi/FUTURE.md`](.pi/FUTURE.md).
 
+Licensed [GPL-3.0-only](LICENSE). Copyright 2026 Iskren Hadzhinedev.
+
 ## Build and isolated preview
 
 Requires an existing Rust/C++ toolchain, Qt 6 development tools and runtime QML modules
@@ -308,8 +310,8 @@ run now. No services, accounts, packages, PAM/polkit files or `/etc` files were 
 
 After explicit deployment approval:
 
-- Review dependency licensing first ([`DEPENDENCIES.md`](DEPENDENCIES.md)); no project license
-  is selected. Build a locked release binary and install it root-owned outside writable homes.
+- Dependency licensing is settled: the project is GPL-3.0-only, matching
+  [`greetd_ipc`](DEPENDENCIES.md). Build a locked release binary and install it root-owned outside writable homes.
 - Provision a dedicated **unprivileged** greeter account and its private local state directory.
   Review distribution-provided greetd/Cage runtime/seat permissions; do not grant blanket
   passwordless power or add ad-hoc PAM/polkit rules.
