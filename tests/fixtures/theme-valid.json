@@ -1,0 +1,5 @@
+{
+  "preset": "dusk",
+  "colors": { "accent": "#7fd1b9" },
+  "layout": { "tileWidth": 92 }
+}

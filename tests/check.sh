@@ -15,9 +15,9 @@ for module in target/debug/build/waylight-greeter-*/out/qt-build-utils/qml_modul
         break
     fi
 done
-cp Main.qml App.qml "$lint/Waylight/"
-/usr/lib/qt6/bin/qmllint -I "$lint" Main.qml App.qml tests/tst_preview.qml
+cp Main.qml App.qml Theme.qml "$lint/Waylight/"
+/usr/lib/qt6/bin/qmllint -I "$lint" Main.qml App.qml Theme.qml tests/tst_preview.qml tests/tst_theme.qml
 # QML tests capture only their own injected-backend window, never the desktop.
-mkdir -p /tmp/waylight-login-ux-checks /tmp/waylight-transition-checks
-QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software /usr/lib/qt6/bin/qmltestrunner -input tests
+mkdir -p /tmp/waylight-login-ux-checks /tmp/waylight-transition-checks /tmp/waylight-theme-checks
+QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QML_XHR_ALLOW_FILE_READ=1 /usr/lib/qt6/bin/qmltestrunner -input tests
 python tests/executable.py
