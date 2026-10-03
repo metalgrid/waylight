@@ -5,7 +5,7 @@
 
 pkgname=waylight-greeter
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc="macOS-style Wayland login greeter for greetd (Rust + CXX-Qt, runs under cage)"
 arch=(x86_64)
 url="https://github.com/metalgrid/waylight"
@@ -46,4 +46,8 @@ package() {
     examples/greetd.toml > greetd.toml.example
   install -Dm644 greetd.toml.example \
     "$pkgdir/usr/share/doc/$pkgname/greetd.toml.example"
+  # Declarative provisioning of the greeter state directory; no install
+  # scripts. The greeter user comes from greetd's own sysusers.d snippet.
+  install -Dm644 "$startdir/waylight-greeter.tmpfiles" \
+    "$pkgdir/usr/lib/tmpfiles.d/$pkgname.conf"
 }

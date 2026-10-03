@@ -1,0 +1,5 @@
+# Provisioned by waylight-greeter: private state directory for the greeter
+# account (greetd's sysusers.d/greetd.conf guarantees the user exists).
+# Created at boot before greetd starts; create immediately with:
+#   systemd-tmpfiles --create waylight-greeter.conf
+d /var/lib/waylight 0700 greeter greeter - -
