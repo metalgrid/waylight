@@ -312,7 +312,11 @@ After explicit deployment approval:
 
 - Dependency licensing is settled: the project is GPL-3.0-only, matching
   [`greetd_ipc`](DEPENDENCIES.md). Build a locked release binary and install it root-owned outside writable homes.
-- Provision a dedicated **unprivileged** greeter account and its private local state directory.
+- Provision a dedicated **unprivileged** greeter account (greetd's own
+  `sysusers.d` creates `greeter`) and its private local state directory. The package ships a
+  `tmpfiles.d` snippet that creates `/var/lib/waylight` (mode `0700`, owned by `greeter`) at
+  boot; for immediate provisioning run
+  `sudo systemd-tmpfiles --create waylight-greeter.conf` or `install -d -o greeter -g greeter -m 0700 /var/lib/waylight`.
   Review distribution-provided greetd/Cage runtime/seat permissions; do not grant blanket
   passwordless power or add ad-hoc PAM/polkit rules.
 - Back up the existing display-manager configuration and keep a known-working recovery login
