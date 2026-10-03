@@ -1,0 +1,49 @@
+# Maintainer: Iskren Hadzhinedev <iskren.hadzhinedev@x3me.net>
+# A macOS-style Wayland login greeter for greetd, running under cage.
+# The binary is self-contained: QML and artwork are embedded at build time.
+# This PKGBUILD never touches /etc/greetd, services, PAM or accounts.
+
+pkgname=waylight-greeter
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="macOS-style Wayland login greeter for greetd (Rust + CXX-Qt, runs under cage)"
+arch=(x86_64)
+url="https://github.com/metalgrid/waylight"
+license=("GPL-3.0-only")
+depends=(greetd cage qt6-base qt6-declarative gcc-libs)
+makedepends=(git rust)
+checkdepends=()
+optdepends=("weston: additional wayland session for the session picker")
+install=
+changelog=
+source=("$pkgname::git+$url.git#tag=v$pkgver")
+noextract=()
+sha256sums=("SKIP")
+
+build() {
+  cd "$pkgname"
+  # cc-rs feeds makepkg's C/CXXFLAGS (notably -flto=auto) into the cxx-qt
+  # generated C++ archives; GCC-LTO objects then break the ld.lld final link
+  # (undefined rust$cxxqtlib1$ symbols). The crate controls its own flags.
+  unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS
+  cargo build --locked --release
+}
+
+check() {
+  cd "$pkgname"
+  cargo test --locked
+}
+
+package() {
+  cd "$pkgname"
+  install -Dm755 target/release/waylight-greeter -t "$pkgdir/usr/bin/"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm644 THEMING.md "$pkgdir/usr/share/doc/$pkgname/THEMING.md"
+  install -Dm644 DEPENDENCIES.md "$pkgdir/usr/share/doc/$pkgname/DEPENDENCIES.md"
+  # Packaged binary lives in /usr/bin; keep the example honest.
+  sed "s#/usr/local/bin/waylight-greeter#/usr/bin/waylight-greeter#" \
+    examples/greetd.toml > greetd.toml.example
+  install -Dm644 greetd.toml.example \
+    "$pkgdir/usr/share/doc/$pkgname/greetd.toml.example"
+}
