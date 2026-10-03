@@ -20,6 +20,8 @@ TestCase {
             property bool preview: true
             property string accounts: "[]"
             property bool closing: false
+            // Real Backend exposes this as a JSON array string of theme paths.
+            property string themePaths: "[]"
             signal identityChosen(string name)
             property int begins: 0
             property int cancels: 0
@@ -505,6 +507,44 @@ TestCase {
         grabImage(window.contentItem).save("/tmp/waylight-login-ux-checks/password-manual-" + data.tag + ".png");
         const bottom = cancel.mapToItem(window.contentItem, 0, cancel.height).y;
         verify(bottom <= window.height - 100, "Cancel clipped at " + bottom);
+    }
+    function test_theme_autoload_first_existing_path_wins() {
+        const backend = createTemporaryObject(fake, test, {themePaths: JSON.stringify([
+            "/no/such/waylight-theme-test.json",
+            Qt.resolvedUrl("fixtures/theme-valid.json").toString()])});
+        const window = createTemporaryObject(view, null, {backend: backend});
+        verify(window);
+        window.requestActivate();
+        tryCompare(window, "active", true);
+        const theme = findChild(window, "theme");
+        verify(theme);
+        compare(theme.tileWidth, 92);
+        compare(String(theme.accent), "#7fd1b9");
+        // Presets stay switchable at runtime and keep the view functional.
+        verify(theme.resetTo("daylight"));
+        compare(String(theme.textPrimary), "#151e36");
+        verify(theme.resetTo("dusk"));
+        compare(String(theme.textPrimary), "#ffffff");
+        compare(findChild(window, "username").font.pixelSize, theme.scaled(18));
+    }
+    function test_theme_preset_screenshots() {
+        const ctx = setup(); const window = ctx.window; const backend = ctx.backend;
+        backend.accounts = JSON.stringify(demoAccounts());
+        backend.prompt = "Password";
+        backend.message = "No authentication request will be sent.";
+        backend.state = "secret";
+        tryCompare(findChild(window, "password"), "activeFocus", true);
+        verify(waitForPolish(window));
+        const theme = findChild(window, "theme");
+        verify(theme);
+        for (const preset of ["dusk", "midnight", "daylight"]) {
+            verify(theme.resetTo(preset));
+            verify(waitForPolish(window));
+            waitForRendering(window.contentItem);
+            grabImage(window.contentItem).save("/tmp/waylight-theme-checks/preset-" + preset + ".png");
+        }
+        verify(theme.resetTo("dusk"));
+        compare(String(theme.textPrimary), "#ffffff");
     }
     function test_long_plain_prompt_and_no_sessions() {
         const ctx = setup(); const window = ctx.window; const backend = ctx.backend;

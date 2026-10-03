@@ -12,8 +12,8 @@ ApplicationWindow {
     minimumHeight: 580
     visible: true
     title: backend.preview ? "Greeter — preview" : "Sign in"
-    color: "#182b56"
-    font.family: "sans-serif"
+    color: theme.windowColor
+    font.family: theme.fontFamily
 
     required property var backend
     property bool closingAllowed: false
@@ -34,7 +34,15 @@ ApplicationWindow {
     readonly property bool layoutBusy: layoutState !== "idle"
     readonly property bool layoutAnswering: layoutState === "secret" || layoutState === "visible"
     readonly property bool layoutAcknowledging: layoutState === "info" || layoutState === "error"
-    Component.onCompleted: presentCurrent()
+    Component.onCompleted: {
+        // Fail-open: a missing or broken theme never prevents startup.
+        theme.loadFirstExisting(typeof backend.themePaths === "string" ? backend.themePaths : "[]");
+        presentCurrent();
+    }
+    Theme {
+        id: theme
+        objectName: "theme"
+    }
     function presentCurrent() {
         holdingTransition = false;
         presentation = {state: backend.state, prompt: backend.prompt, message: backend.message};
@@ -138,27 +146,47 @@ ApplicationWindow {
     }
 
     Image {
+        visible: theme.backgroundMode === "builtin"
         anchors.fill: parent
         source: "background.svg"
         fillMode: Image.PreserveAspectCrop
     }
+    Image {
+        visible: theme.backgroundMode === "image"
+        anchors.fill: parent
+        source: theme.backgroundImage
+        fillMode: Image.PreserveAspectCrop
+    }
+    Rectangle {
+        visible: theme.backgroundMode === "solid"
+        anchors.fill: parent
+        color: theme.backgroundColor
+    }
+    Rectangle {
+        visible: theme.backgroundMode === "gradient"
+        anchors.fill: parent
+        gradient: Gradient {
+            GradientStop { position: 0; color: theme.backgroundTop }
+            GradientStop { position: 1; color: theme.backgroundBottom }
+        }
+    }
     Rectangle {
         anchors.fill: parent
         gradient: Gradient {
-            GradientStop { position: 0; color: "#18070b20" }
-            GradientStop { position: 1; color: "#50070b20" }
+            GradientStop { position: 0; color: theme.overlayTop }
+            GradientStop { position: 1; color: theme.overlayBottom }
         }
     }
     Label {
-        anchors { top: parent.top; left: parent.left; margins: 24 }
+        anchors { top: parent.top; left: parent.left; margins: theme.barMarginLeft }
         text: root.backend.preview ? "PREVIEW · No system changes" : "SIGN IN · Wayland"
-        color: "#dce0ed"
-        font { pixelSize: 11; letterSpacing: 1.2 }
+        color: theme.textBar
+        font { pixelSize: theme.scaled(11); letterSpacing: 1.2 }
     }
     ComboBox {
         id: session
         objectName: "session"
-        anchors { top: parent.top; right: parent.right; margins: 16 }
+        anchors { top: parent.top; right: parent.right; margins: theme.barMarginRight }
         width: 256
         height: 40
         model: root.backend.sessions
@@ -172,8 +200,8 @@ ApplicationWindow {
         contentItem: Label {
             text: session.currentText
             textFormat: Text.PlainText
-            color: "#ecedf5"
-            font.pixelSize: 12
+            color: theme.textCombo
+            font.pixelSize: theme.scaled(12)
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
         }
@@ -181,12 +209,12 @@ ApplicationWindow {
             x: session.width - width - 14
             anchors.verticalCenter: parent.verticalCenter
             text: "⌄"
-            color: "#ecedf5"
+            color: theme.textCombo
         }
         background: Rectangle {
-            radius: 20
-            color: session.hovered ? "#35ffffff" : "#18ffffff"
-            border.color: session.activeFocus ? "#d9e2ff" : "#40ffffff"
+            radius: theme.controlRadius
+            color: session.hovered ? theme.fillHover : theme.fillRest
+            border.color: session.activeFocus ? theme.accent : theme.borderSubtle
         }
         delegate: ItemDelegate {
             id: option
@@ -198,13 +226,13 @@ ApplicationWindow {
             contentItem: Label {
                 text: option.text
                 textFormat: Text.PlainText
-                color: "#ecedf5"
-                font.pixelSize: 12
+                color: theme.textCombo
+                font.pixelSize: theme.scaled(12)
                 verticalAlignment: Text.AlignVCenter
             }
             background: Rectangle {
-                radius: 8
-                color: option.highlighted ? "#35ffffff" : "transparent"
+                radius: theme.optionRadius
+                color: option.highlighted ? theme.fillHover : "transparent"
             }
         }
         popup: Popup {
@@ -219,33 +247,33 @@ ApplicationWindow {
                 clip: true
             }
             background: Rectangle {
-                radius: 14
-                color: "#ed29324c"
-                border.color: "#50ffffff"
+                radius: theme.popupRadius
+                color: theme.popupBackground
+                border.color: theme.popupBorder
             }
         }
     }
 
     Column {
-        anchors { top: parent.top; topMargin: root.height * 0.115; horizontalCenter: parent.horizontalCenter }
+        anchors { top: parent.top; topMargin: root.height * theme.clockTopRatio; horizontalCenter: parent.horizontalCenter }
         spacing: 0
         Label {
             anchors.horizontalCenter: parent.horizontalCenter
             text: Qt.formatDateTime(root.now, "dddd, MMMM d")
-            color: "#eef0f8"
-            font { pixelSize: 21; weight: Font.Medium }
+            color: theme.textDate
+            font { pixelSize: theme.scaled(theme.clockDateSize); weight: Font.Medium }
         }
         Label {
             anchors.horizontalCenter: parent.horizontalCenter
             text: Qt.formatDateTime(root.now, "hh:mm")
-            color: "#f4f1fa"
-            font { pixelSize: Math.min(100, root.height * 0.135); weight: Font.DemiBold; letterSpacing: -3 }
+            color: theme.textBright
+            font { pixelSize: Math.min(theme.scaled(theme.clockTimeCap), root.height * 0.135); weight: Font.DemiBold; letterSpacing: -3 }
         }
     }
 
     ScrollView {
-        anchors { horizontalCenter: parent.horizontalCenter; top: parent.top; topMargin: root.height * (root.height < 650 ? 0.33 : 0.37); bottom: parent.bottom; bottomMargin: 100 }
-        width: Math.min(580, root.width - 32)
+        anchors { horizontalCenter: parent.horizontalCenter; top: parent.top; topMargin: root.height * (root.height < theme.panelShortHeight ? theme.panelTopRatioShort : theme.panelTopRatio); bottom: parent.bottom; bottomMargin: theme.panelBottomMargin }
+        width: Math.min(theme.panelMaxWidth, root.width - 32)
         contentWidth: availableWidth
         clip: true
         ColumnLayout {
@@ -284,8 +312,8 @@ ApplicationWindow {
                     required property int index
                     readonly property bool selected: root.selectedUsername === modelData.username
                     readonly property bool hasPicture: picture.status === Image.Ready
-                    width: 84
-                    height: 100
+                    width: theme.tileWidth
+                    height: theme.tileHeight
                     padding: 4
                     enabled: root.interactive && (!modelData.username || session.count > 0)
                     activeFocusOnTab: true
@@ -321,18 +349,18 @@ ApplicationWindow {
                         spacing: 4
                         Rectangle {
                             anchors.horizontalCenter: parent.horizontalCenter
-                            width: 56
-                            height: 56
+                            width: theme.avatarSize
+                            height: theme.avatarSize
                             radius: width / 2
-                            color: "#648695"
-                            border { color: "#80ffffff"; width: 1 }
+                            color: theme.avatarFallback
+                            border { color: theme.borderAvatar; width: 1 }
                             Rectangle {
                                 visible: !tile.hasPicture && !!tile.modelData.username
                                 anchors { horizontalCenter: parent.horizontalCenter; top: parent.top; topMargin: parent.height * 0.205 }
                                 width: parent.width * 0.284
                                 height: width
                                 radius: width / 2
-                                color: "#e4e9e7"
+                                color: theme.avatarGlyph
                             }
                             Rectangle {
                                 visible: !tile.hasPicture && !!tile.modelData.username
@@ -343,15 +371,15 @@ ApplicationWindow {
                                 topRightRadius: 25
                                 bottomLeftRadius: 9
                                 bottomRightRadius: 9
-                                color: "#e4e9e7"
+                                color: theme.avatarGlyph
                             }
                             Image {
                                 id: picture
                                 objectName: "picture"
                                 anchors.fill: parent
                                 source: tile.modelData.picture || ""
-                                sourceSize.width: 56
-                                sourceSize.height: 56
+                                sourceSize.width: theme.avatarSize
+                                sourceSize.height: theme.avatarSize
                                 fillMode: Image.PreserveAspectFit
                                 visible: tile.hasPicture
                             }
@@ -359,8 +387,8 @@ ApplicationWindow {
                                 anchors.centerIn: parent
                                 visible: !tile.modelData.username
                                 text: "…"
-                                color: "white"
-                                font.pixelSize: 28
+                                color: theme.textPrimary
+                                font.pixelSize: theme.scaled(28)
                             }
                         }
                         Label {
@@ -368,8 +396,8 @@ ApplicationWindow {
                             width: parent.width
                             text: tile.modelData.name
                             textFormat: Text.PlainText
-                            color: "white"
-                            font.pixelSize: 12
+                            color: theme.textPrimary
+                            font.pixelSize: theme.scaled(12)
                             horizontalAlignment: Text.AlignHCenter
                             wrapMode: Text.Wrap
                             maximumLineCount: 2
@@ -377,10 +405,10 @@ ApplicationWindow {
                         }
                     }
                     background: Rectangle {
-                        radius: 12
-                        color: tile.selected ? "#35ffffff" : tile.hovered ? "#18ffffff" : "transparent"
+                        radius: theme.tileRadius
+                        color: tile.selected ? theme.fillHover : tile.hovered ? theme.fillRest : "transparent"
                         border.width: tile.activeFocus ? 2 : 1
-                        border.color: tile.activeFocus ? "white" : tile.selected ? "#a0ffffff" : "transparent"
+                        border.color: tile.activeFocus ? theme.textPrimary : tile.selected ? theme.borderSelected : "transparent"
                     }
                 }
             }
@@ -392,12 +420,12 @@ ApplicationWindow {
                 spacing: 8
                 Label {
                     visible: !!root.selectedUsername
-                    Layout.preferredWidth: 260
-                    Layout.preferredHeight: root.layoutBusy ? 20 : 38
+                    Layout.preferredWidth: theme.fieldWidth
+                    Layout.preferredHeight: root.layoutBusy ? 20 : theme.fieldHeight
                     text: root.selectedUsername
                     textFormat: Text.PlainText
-                    color: "white"
-                    font.pixelSize: 16
+                    color: theme.textPrimary
+                    font.pixelSize: theme.scaled(16)
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideRight
@@ -405,29 +433,29 @@ ApplicationWindow {
                 TextField {
                     id: username
                     objectName: "username"
-                    Layout.preferredWidth: 260
-                    Layout.preferredHeight: 38
+                    Layout.preferredWidth: theme.fieldWidth
+                    Layout.preferredHeight: theme.fieldHeight
                     visible: !root.selectedUsername && !root.layoutBusy
                     placeholderText: "Username"
-                    placeholderTextColor: "#d8d9e3"
-                    color: "white"
+                    placeholderTextColor: theme.textPlaceholder
+                    color: theme.textPrimary
                     enabled: !root.busy && !root.backend.closing
                     maximumLength: 256
                     leftPadding: 13
-                    font { pixelSize: 18; weight: Font.DemiBold }
+                    font { pixelSize: theme.scaled(18); weight: Font.DemiBold }
                     Accessible.name: "Username"
                     selectByMouse: true
-                    background: Rectangle { radius: 19; color: "#18ffffff"; border.color: username.activeFocus ? "#d9e2ff" : "transparent" }
+                    background: Rectangle { radius: theme.fieldRadius; color: theme.fillRest; border.color: username.activeFocus ? theme.accent : "transparent" }
                     onAccepted: root.submit()
                     onTextEdited: { if (root.backend.reset_identity()) password.clear(); }
                     Component.onCompleted: forceActiveFocus()
                 }
                 Label {
                     visible: !root.selectedUsername && root.layoutBusy
-                    Layout.preferredWidth: 260
+                    Layout.preferredWidth: theme.fieldWidth
                     text: username.text
                     textFormat: Text.PlainText
-                    color: "white"
+                    color: theme.textPrimary
                     horizontalAlignment: Text.AlignHCenter
                     elide: Text.ElideRight
                 }
@@ -436,8 +464,8 @@ ApplicationWindow {
                 id: login
                 objectName: "login"
                 Layout.alignment: Qt.AlignBottom
-                Layout.preferredWidth: 38
-                Layout.preferredHeight: 38
+                Layout.preferredWidth: theme.fieldHeight
+                Layout.preferredHeight: theme.fieldHeight
                 visible: !root.layoutBusy
                 enabled: !root.busy && !root.backend.closing && root.loginUsername.length > 0 && session.count > 0
                 text: "→"
@@ -447,15 +475,15 @@ ApplicationWindow {
                 Keys.onEnterPressed: root.submit()
                 contentItem: Label {
                     text: login.text
-                    color: "white"
-                    font.pixelSize: 24
+                    color: theme.textPrimary
+                    font.pixelSize: theme.scaled(24)
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
                 background: Rectangle {
-                    radius: 19
-                    color: login.down ? "#80ffffff" : login.hovered ? "#60ffffff" : "#30ffffff"
-                    border.color: login.activeFocus ? "white" : "#70ffffff"
+                    radius: theme.fieldRadius
+                    color: login.down ? theme.fillDown : login.hovered ? theme.fillAnswer : theme.fillSubtle
+                    border.color: login.activeFocus ? theme.textPrimary : theme.borderButton
                     opacity: login.enabled ? 1 : 0.4
                 }
             }
@@ -474,7 +502,7 @@ ApplicationWindow {
                 width: parent.width
                 text: root.holdingTransition ? root.presentation.prompt : root.backend.prompt
                 textFormat: Text.PlainText
-                color: "white"
+                color: theme.textPrimary
                 wrapMode: Text.Wrap
                 horizontalAlignment: Text.AlignHCenter
                 Accessible.name: text
@@ -489,24 +517,24 @@ ApplicationWindow {
                 id: password
                 objectName: "password"
                 Layout.preferredWidth: 224
-                Layout.preferredHeight: 38
+                Layout.preferredHeight: theme.fieldHeight
                 placeholderText: root.backend.preview ? "Password" : "Enter answer"
-                placeholderTextColor: "#d8d9e3"
-                color: "white"
+                placeholderTextColor: theme.textPlaceholder
+                color: theme.textPrimary
                 echoMode: root.backend.state === "secret" ? TextInput.Password : TextInput.Normal
                 maximumLength: 2147483647
                 visible: root.layoutAnswering
                 enabled: root.answering && !root.backend.closing
                 selectByMouse: true
                 activeFocusOnTab: true
-                font.pixelSize: 14
+                font.pixelSize: theme.scaled(14)
                 leftPadding: 13
                 rightPadding: 13
                 Accessible.name: root.answering ? root.backend.prompt || "Authentication response" : "Authentication response"
                 background: Rectangle {
-                    radius: 19
-                    color: "#35ffffff"
-                    border.color: password.activeFocus ? "#d9e2ff" : "#60ffffff"
+                    radius: theme.fieldRadius
+                    color: theme.fillHover
+                    border.color: password.activeFocus ? theme.accent : theme.borderField
                     border.width: password.activeFocus ? 2 : 1
                 }
                 onAccepted: root.submit()
@@ -514,8 +542,8 @@ ApplicationWindow {
             Button {
                 id: answerLogin
                 objectName: "answerLogin"
-                Layout.preferredWidth: 38
-                Layout.preferredHeight: 38
+                Layout.preferredWidth: theme.fieldHeight
+                Layout.preferredHeight: theme.fieldHeight
                 enabled: root.answering && !root.backend.closing
                 text: "→"
                 Accessible.name: "Submit answer"
@@ -524,15 +552,15 @@ ApplicationWindow {
                 Keys.onEnterPressed: root.submit()
                 contentItem: Label {
                     text: answerLogin.text
-                    color: "white"
-                    font.pixelSize: 24
+                    color: theme.textPrimary
+                    font.pixelSize: theme.scaled(24)
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
                 background: Rectangle {
-                    radius: 19
-                    color: answerLogin.down ? "#80ffffff" : answerLogin.hovered ? "#60ffffff" : "#30ffffff"
-                    border.color: answerLogin.activeFocus ? "white" : "#70ffffff"
+                    radius: theme.fieldRadius
+                    color: answerLogin.down ? theme.fillDown : answerLogin.hovered ? theme.fillAnswer : theme.fillSubtle
+                    border.color: answerLogin.activeFocus ? theme.textPrimary : theme.borderButton
                 }
             }
         }
@@ -562,8 +590,8 @@ ApplicationWindow {
                 text: root.holdingTransition ? root.presentation.message
                     : root.blockedReason + (root.blockedReason && root.backend.message ? "\n" : "") + root.backend.message
                 textFormat: Text.PlainText
-                color: "#e2e4ef"
-                font.pixelSize: 12
+                color: theme.textSecondary
+                font.pixelSize: theme.scaled(12)
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
                 Accessible.role: Accessible.StaticText
@@ -599,7 +627,7 @@ ApplicationWindow {
     }
 
     RowLayout {
-        anchors { bottom: parent.bottom; bottomMargin: 28; horizontalCenter: parent.horizontalCenter }
+        anchors { bottom: parent.bottom; bottomMargin: theme.bottomBarMargin; horizontalCenter: parent.horizontalCenter }
         spacing: 30
         Repeater {
             objectName: "powerButtons"
@@ -612,8 +640,8 @@ ApplicationWindow {
                 id: power
                 required property var modelData
                 objectName: modelData.label
-                Layout.preferredWidth: 44
-                Layout.preferredHeight: 44
+                Layout.preferredWidth: theme.powerSize
+                Layout.preferredHeight: theme.powerSize
                 padding: 10
                 text: modelData.label
                 enabled: root.interactive && (root.backend.capabilities & (1 << modelData.action)) !== 0
@@ -632,9 +660,9 @@ ApplicationWindow {
                     fillMode: Image.PreserveAspectFit
                 }
                 background: Rectangle {
-                    radius: 22
-                    color: power.hovered ? "#30ffffff" : "transparent"
-                    border.color: power.activeFocus ? "#e2e4ef" : "transparent"
+                    radius: theme.powerRadius
+                    color: power.hovered ? theme.fillSubtle : "transparent"
+                    border.color: power.activeFocus ? theme.textSecondary : "transparent"
                 }
             }
         }
