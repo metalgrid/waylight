@@ -146,3 +146,191 @@
 
 - `waylight-config` language picker reuses `configPaths` and the same
   catalogs; `waylight-configd::SetLanguage` writes the same file format.
+
+## Deliverable B — config utility (complete 2026-10-05)
+
+### B1 — crate restructure + `waylight-configd`
+
+- The crate is now `src/lib.rs` + three binaries: `src/main.rs`
+  (`waylight-greeter`, behavior and CLI flags unchanged), `src/bin/
+  waylight-configd.rs` and `src/bin/waylight-config.rs`. The cxx-qt QML
+  module (greeter UI, Theme, translations, both QObject bridges) is built
+  exactly once in the library; cxx-qt-build links its whole-archive
+  initializer through the lib target, so every binary registers the module
+  and embeds the resources. Proven at runtime: the greeter preview,
+  the config GUI and the cargo test binaries all load `:/qt/qml/Waylight/…`
+  resources, and the GUI with `waylight.json = {"language": "es"}` installs
+  the translator (no fallback warning on stderr).
+- The language resolution helpers (`LANGUAGES`, `validated_language`,
+  `language_candidates`, `read_limited`, `resolve_language`,
+  `install_language`) moved from `main.rs` into `src/i18n.rs` so the GUI and
+  the daemon share them; the greeter binary calls `i18n::install_language`.
+- `src/configd/` (headless, no Qt objects):
+  - `validate.rs` — structural validation only: JSON object, ≤ 1 MiB,
+    known top-level sections (`colors/background/font/layout` for theme,
+    `language` for config; sections must be objects, `language` must be a
+    string, code must be one of the 11 supported codes). Token-level
+    validation stays fail-open in `Theme.qml` (documented in code; no
+    duplicated validator). Unknown keys inside known sections round-trip.
+  - `store.rs` — atomic writes to the injected `Paths` (system default
+    `/etc/waylight/{theme,waylight}.json`): temp file in the target
+    directory (pid + attempt counter, `create_new`), 0644, `sync_all`,
+    `rename(2)`, best-effort directory fsync; `/etc/waylight` is created
+    0755 only when missing and an existing directory is never
+    re-permissioned. Reads fail open to empty.
+  - `polkit.rs` — `Authorizer` trait (async via hand-rolled boxed futures,
+    no new dependency) + production `Polkit` authorizer: one plain zbus
+    proxy call to `org.freedesktop.PolicyKit1.Authority.CheckAuthorization`
+    per mutating call, subject = the caller's **system-bus-name** (unique
+    name from the message header, so polkit evaluates the real caller),
+    action `dev.waylight.config.set`, flags = ALLOW_USER_INTERACTION,
+    fail-closed on polkit errors.
+  - `mod.rs` — `ConfigService<A: Authorizer>` with the `#[interface(name =
+    "dev.waylight.Config1")]` impl: `GetAll() -> (s theme, s config,
+    s theme_path, s config_path)` (read-only, no polkit), `SetTheme(s)`,
+    `SetLanguage(s)` (authorize → validate → atomic write). D-Bus errors
+    via `#[derive(DBusError)]` with prefix `dev.waylight.Config1.Error`
+    (`Denied`, `InvalidTheme`, `InvalidLanguage`, `Io`). `run()` connects
+    to the system bus, publishes the object, requests `dev.waylight.Config`
+    and serves until SIGTERM/SIGINT.
+- **Unit tests** (51 Rust tests total, was 31): validation matrix (known
+  sections, unknown section/preset rejection, section object-ness, 1 MiB
+  cap, config section, supported codes), atomic writes in tempdirs (0644
+  file, 0755 created directory, existing directory untouched, replace
+  existing content, failure leaves the target intact, no temp residue,
+  fail-open reads), injected authorizers (allowed write lands on disk;
+  **denied authorization refuses without writing anything — no directory is
+  even created**; missing caller identity denied even with an allowing
+  authorizer; invalid theme rejected before any write), and the locked
+  GetAll/path shape.
+
+### B2 — system files (`system/`)
+
+- `dev.waylight.config.policy` — polkit action `dev.waylight.config.set`,
+  `allow_active=auth_admin_keep`, `allow_inactive=no`, `allow_any=no`,
+  English description/message.
+- `dev.waylight.Config.conf` — D-Bus system policy: `root` may own
+  `dev.waylight.Config`; the default context may send to it (authorization
+  is polkit's job, per call).
+- `dev.waylight.Config.service` — D-Bus activation: `Exec=/usr/bin/
+  waylight-configd`, `User=root`, `SystemdService=waylight-configd.service`.
+- `waylight-configd.service` — systemd `Type=dbus` unit with
+  `BusName=dev.waylight.Config`, `Restart=on-failure` and cheap hardening
+  (`NoNewPrivileges`, `PrivateTmp`, `ProtectHome`, kernel/control-group
+  protections); D-Bus-activated, no static enablement required.
+
+### B3 — `waylight-config` GUI
+
+- `src/config_backend.rs` — `ConfigBackend` QObject (theme/config/
+  themePath/configPath/status/message qproperties, `reload`/`applyTheme`/
+  `applyLanguage`/`poll` invokables, `applied` signal) bridging QML to a
+  worker thread that owns the zbus system-bus connection and a typed
+  `Config1Proxy` client for the daemon (same pattern as the greeter's
+  Backend: bounded channel pair, 16 ms QML poll Timer).
+- `ConfigApp.qml` (entry: real ConfigBackend + poll Timer) and
+  `ConfigMain.qml` (the editor window):
+  - preset picker (dusk/midnight/daylight) that **expands** a preset into
+    concrete tokens through the greeter's own `Theme.resetTo`, so the
+    daemon never sees a `preset` key;
+  - language picker with the 11 native names → `{"language": code}`;
+  - structured editors with the plan's clamped ranges: accent (#hex +
+    swatch), background mode + absolute image path, font family + scale
+    (0.5–2.0), clockTopRatio/panelTopRatio sliders (0–0.9), panelMaxWidth/
+    tileWidth/tileHeight/avatarSize SpinBoxes (1–2000); all other tokens
+    load from the daemon and round-trip untouched;
+  - raw JSON tab with the same structural checks the daemon applies
+    (invalid JSON, unknown sections, non-object sections flagged; Apply
+    refuses locally; switching tabs carries accepted raw edits back into
+    the structured draft);
+  - live preview: a second top-level window instantiating the greeter's
+    own `Main.qml` (it is an ApplicationWindow, so a separate window is
+    the correct embedding) with a mock backend (full property/function
+    surface, `themePaths: "[]"`) and the draft applied in memory via the
+    preview's internal `Theme` (`contentData` objectName `theme`) through
+    `applyJson`; debounced 150 ms; previewing never writes;
+  - Apply → `SetTheme` (+ `SetLanguage` when the picked language differs
+    from the loaded one); Revert → `reload()` from the daemon; daemon
+    replies (including validation errors) surface in the status line;
+    after a successful Apply the state is re-synced from the daemon.
+- The GUI resolves its UI language exactly like the greeter
+  (`i18n::install_language` before engine load): the embedded preview and
+  RTL mirroring follow `waylight.json`; the GUI's own chrome is
+  `qsTr`-wrapped English source (no catalogs for the new contexts yet —
+  documented limitation, translations can be added to the committed
+  catalogs without code changes).
+
+### B4 — tests
+
+- `tests/tst_config.qml` (qmltestrunner, 12 tests, offscreen, mocked
+  backend with the exact ConfigBackend surface): daemon load into editors
+  and language sync, serialization emits only the four known sections,
+  preset expansion without a `preset` key (and unknown preset → dusk),
+  clamping parity with the greeter, structural-problem messages, Apply
+  sends the serialized theme and the changed language (and re-syncs),
+  raw-tab flow incl. local refusal of garbage, Revert reloads from the
+  daemon, preview applies the draft in memory without touching the
+  daemon, language table completeness.
+- `tests/check.sh` now lints `ConfigApp.qml`, `ConfigMain.qml` and
+  `tst_config.qml` and picks the **newest** module build directory for
+  qmllint staging (stale build dirs from changed build scripts would
+  otherwise shadow new types).
+- Daemon "integration without polkit": covered by the injected-authorizer
+  unit tests above (deny → refuse, nothing written). A live polkit prompt
+  test is a manual post-install step (deferred to the user, as planned).
+
+### B5 — packaging
+
+- `packaging/PKGBUILD`: `pkgrel=3`; `depends` gains `polkit` (and `dbus`
+  for the shipped dbus-1 files); `package()` installs all three binaries to
+  `/usr/bin` and the four system files to their exact paths
+  (`/usr/share/polkit-1/actions/dev.waylight.config.policy`,
+  `/usr/share/dbus-1/system.d/dev.waylight.Config.conf`,
+  `/usr/share/dbus-1/system-services/dev.waylight.Config.service`,
+  `/usr/lib/systemd/system/waylight-configd.service`). Nothing is enabled
+  or started at install time. `makepkg -f` verified: builds green (the
+  C/CXXFLAGS `unset` workaround stays) and the package contains both new
+  binaries and all four system files (see Gate below).
+
+### B6 — docs
+
+- README: new "Configuration utility" section (three binaries, GUI panes,
+  polkit prompt behavior, exact file destinations and modes, restart-the-
+  greeter note, service wiring) + THEMING.md pointer from the Theming
+  section.
+- THEMING.md: new "Editing with waylight-config" section documenting the
+  preset-key asymmetry (greeter accepts `preset`, daemon stores expanded
+  tokens only).
+- This file extended; `.pi/CONFIG-TODO.md` B1–B6 + Gate checked.
+
+### Tests and evidence (Deliverable B)
+
+- Full gate `sh tests/check.sh` — **green** (exit 0): fmt --check, locked
+  build (three binaries), 51 Rust tests, clippy `-D warnings`, qmllint on
+  five module files + four test files, 56 QML tests (44 prior + 12 config),
+  CLI isolation, four headless Cage cases.
+- Offscreen GUI smoke: `QT_QPA_PLATFORM=offscreen` run for 10 s with the
+  packaged (uninstalled) daemon absent — zero stderr, UI stays up, status
+  line carries the daemon error; with `XDG_CONFIG_HOME` pointing at a
+  temp `waylight.json = {"language": "es"}` the translator installs from
+  the embedded resources (no fallback warning), proving both binaries
+  embed the QML module.
+- `waylight-configd` on the host system bus without the packaged D-Bus
+  policy: refused to own `dev.waylight.Config` (fail-closed, exit 1,
+  `org.freedesktop.DBus.Error.AccessDenied`) and changed nothing — the
+  bus policy file is required, exactly as designed.
+- Package build: `makepkg -f` in `packaging/` (source pinned to the local
+  commit, see Gate) produced `waylight-greeter-0.1.0-3-x86_64.pkg.tar.zst`;
+  `pacman -Qlp` lists `usr/bin/waylight-{greeter,config,configd}` and all
+  four system files. No live polkit/systemd/D-Bus activation test was run
+  (no system changes); restart-the-greeter behavior is documented.
+
+### Known limitations (documented, by design)
+
+- The GUI's own strings are English (`qsTr`-wrapped); the committed
+  catalogs cover the `Main` context only. The preview window is fully
+  localized.
+- `GetAll` is unauthenticated by design (reads only what any local user
+  can already read); every mutation is polkit-gated.
+- The daemon binds `/etc/waylight` only; user-level config precedence
+  (`$XDG_CONFIG_HOME`) is untouched and intentionally out of scope for the
+  system utility (locked plan: "no user-session theme editing").
