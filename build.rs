@@ -4,9 +4,12 @@ fn main() {
         "App.qml",
         "Main.qml",
         "Theme.qml",
+        "ConfigApp.qml",
+        "ConfigMain.qml",
     ]))
     .file("src/backend.rs")
     .file("src/i18n.rs")
+    .file("src/config_backend.rs")
     .qt_module("QuickControls2")
     .qrc("resources.qrc")
     .build();
