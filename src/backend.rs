@@ -42,6 +42,30 @@ fn theme_paths_json(xdg_config_home: Option<&OsStr>, home: Option<&OsStr>) -> St
     serde_json::to_string(&encoded).expect("path list serialization cannot fail")
 }
 
+/// Ordered waylight.json candidates, mirroring theme_paths_json. Pure helper
+/// taking environment values as parameters so tests never mutate the
+/// environment. main.rs resolves the UI language from the first readable
+/// candidate; presentation only, never an authentication input.
+pub fn config_language_json(xdg_config_home: Option<&OsStr>, home: Option<&OsStr>) -> String {
+    let mut paths = Vec::new();
+    let user = xdg_config_home
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            home.filter(|value| !value.is_empty())
+                .map(|home| PathBuf::from(home).join(".config"))
+        });
+    if let Some(base) = user {
+        paths.push(base.join("waylight").join("waylight.json"));
+    }
+    paths.push(PathBuf::from("/etc/waylight/waylight.json"));
+    let encoded: Vec<String> = paths
+        .iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect();
+    serde_json::to_string(&encoded).expect("path list serialization cannot fail")
+}
+
 #[cxx_qt::bridge]
 pub mod ffi {
     unsafe extern "C++" {
@@ -71,6 +95,7 @@ pub mod ffi {
         #[qproperty(bool, preview)]
         #[qproperty(bool, closing)]
         #[qproperty(QString, theme_paths, cxx_name = "themePaths")]
+        #[qproperty(QString, config_paths, cxx_name = "configPaths")]
         type Backend = super::BackendRust;
         #[qinvokable]
         fn poll(self: Pin<&mut Backend>);
@@ -131,6 +156,7 @@ pub struct BackendRust {
     cancelling: bool,
     closing: bool,
     theme_paths: QString,
+    config_paths: QString,
     pending: Option<Intent>,
 }
 impl Default for BackendRust {
@@ -156,6 +182,10 @@ impl Default for BackendRust {
             cancelling: false,
             closing: false,
             theme_paths: QString::from(theme_paths_json(
+                std::env::var_os("XDG_CONFIG_HOME").as_deref(),
+                std::env::var_os("HOME").as_deref(),
+            )),
+            config_paths: QString::from(config_language_json(
                 std::env::var_os("XDG_CONFIG_HOME").as_deref(),
                 std::env::var_os("HOME").as_deref(),
             )),
@@ -440,6 +470,30 @@ mod tests {
         assert_eq!(
             theme_paths_json(Some(OsStr::new("/a\"b\\c")), None),
             "[\"/a\\\"b\\\\c/waylight/theme.json\",\"/etc/waylight/theme.json\"]"
+        );
+    }
+
+    #[test]
+    fn config_paths_search_order_is_user_then_system() {
+        let system = "/etc/waylight/waylight.json";
+        assert_eq!(
+            config_language_json(Some(OsStr::new("/custom/cfg")), Some(OsStr::new("/home/u"))),
+            format!("[\"/custom/cfg/waylight/waylight.json\",\"{system}\"]")
+        );
+        // An empty XDG_CONFIG_HOME falls back to $HOME/.config.
+        assert_eq!(
+            config_language_json(Some(OsStr::new("")), Some(OsStr::new("/home/u"))),
+            format!("[\"/home/u/.config/waylight/waylight.json\",\"{system}\"]")
+        );
+        assert_eq!(
+            config_language_json(None, Some(OsStr::new("/home/u"))),
+            format!("[\"/home/u/.config/waylight/waylight.json\",\"{system}\"]")
+        );
+        // Without any usable user base only the system path remains.
+        assert_eq!(config_language_json(None, None), format!("[\"{system}\"]"));
+        assert_eq!(
+            config_language_json(Some(OsStr::new("")), Some(OsStr::new(""))),
+            format!("[\"{system}\"]")
         );
     }
 }

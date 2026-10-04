@@ -1,3 +1,4 @@
 <RCC><qresource prefix="/qt/qml/Waylight">
 <file>background.svg</file><file>icons/power.svg</file><file>icons/restart.svg</file><file>icons/sleep.svg</file>
+<file>i18n/waylight_ar.qm</file><file>i18n/waylight_bg.qm</file><file>i18n/waylight_bn.qm</file><file>i18n/waylight_es.qm</file><file>i18n/waylight_fr.qm</file><file>i18n/waylight_hi.qm</file><file>i18n/waylight_pt.qm</file><file>i18n/waylight_ru.qm</file><file>i18n/waylight_ur.qm</file><file>i18n/waylight_zh.qm</file>
 </qresource></RCC>

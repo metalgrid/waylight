@@ -6,6 +6,7 @@ fn main() {
         "Theme.qml",
     ]))
     .file("src/backend.rs")
+    .file("src/i18n.rs")
     .qt_module("QuickControls2")
     .qrc("resources.qrc")
     .build();

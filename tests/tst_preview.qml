@@ -359,7 +359,8 @@ TestCase {
         compare(backend.state, "idle"); compare(backend.action, -1);
         mouseClick(powers.itemAt(2)); tryCompare(dialog, "visible", true);
         verify(waitForPolish(window));
-        mouseClick(dialog.standardButton(Dialog.Yes)); compare(backend.action, 2);
+        // Explicit translated buttons; tests match the objectName, never text.
+        mouseClick(findChild(dialog, "confirmYes")); compare(backend.action, 2);
         backend.state = "idle"; verify(waitForPolish(window));
         mouseClick(powers.itemAt(0)); compare(backend.action, 0);
         backend.state = "waiting";
@@ -403,7 +404,7 @@ TestCase {
         mouseClick(powers.itemAt(1)); tryCompare(dialog, "visible", true);
         compare(backend.state, "secret"); compare(backend.cancels, 0); compare(field.text, "synthetic unchanged answer");
         verify(!field.activeFocus); verify(waitForPolish(window));
-        mouseClick(dialog.standardButton(Dialog.No)); tryCompare(dialog, "visible", false);
+        mouseClick(findChild(dialog, "confirmNo")); tryCompare(dialog, "visible", false);
         tryCompare(field, "activeFocus", true); compare(field.text, "synthetic unchanged answer"); compare(backend.cancels, 0);
         mouseClick(powers.itemAt(2)); tryCompare(dialog, "visible", true);
         backend.state = "waiting"; backend.prompt = "New literal challenge"; backend.state = "visible";
@@ -412,11 +413,11 @@ TestCase {
         compare(backend.state, "visible"); compare(backend.cancels, 0);
         field.text = "another synthetic answer";
         mouseClick(powers.itemAt(2)); tryCompare(dialog, "visible", true);
-        backend.capabilities = 0; verify(waitForPolish(window)); mouseClick(dialog.standardButton(Dialog.Yes));
+        backend.capabilities = 0; verify(waitForPolish(window)); mouseClick(findChild(dialog, "confirmYes"));
         compare(backend.cancels, 0); compare(field.text, "another synthetic answer");
         backend.capabilities = 7;
         mouseClick(powers.itemAt(2)); tryCompare(dialog, "visible", true);
-        verify(waitForPolish(window)); mouseClick(dialog.standardButton(Dialog.Yes));
+        verify(waitForPolish(window)); mouseClick(findChild(dialog, "confirmYes"));
         compare(backend.state, "cancelling"); compare(backend.action, -1); compare(backend.cancels, 1); compare(field.text, "");
         backend.completeCleanup(); compare(backend.state, "power"); compare(backend.action, 2);
         for (const state of ["starting", "handoff", "disconnected", "power"]) {

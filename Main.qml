@@ -11,9 +11,13 @@ ApplicationWindow {
     minimumWidth: 640
     minimumHeight: 580
     visible: true
-    title: backend.preview ? "Greeter — preview" : "Sign in"
+    title: backend.preview ? qsTr("Greeter — preview") : qsTr("Sign in")
     color: theme.windowColor
     font.family: theme.fontFamily
+    // Presentation direction follows the UI language resolved in Rust before
+    // the engine loads (ar/ur mirror); anchored edges swap, centers stay put.
+    LayoutMirroring.enabled: Qt.application.layoutDirection === Qt.RightToLeft
+    LayoutMirroring.childrenInherit: true
 
     required property var backend
     property bool closingAllowed: false
@@ -22,11 +26,11 @@ ApplicationWindow {
     readonly property bool acknowledging: backend.state === "info" || backend.state === "error"
     readonly property bool cancellable: !backend.closing && (answering || acknowledging || backend.state === "waiting")
     readonly property bool interactive: !backend.closing && (!busy || cancellable || backend.state === "cancelling")
-    readonly property string blockedReason: backend.closing ? "Closing after authentication cleanup…"
-        : backend.state === "starting" || backend.state === "handoff" ? "Session start is committed; user switching and power changes are disabled."
-        : backend.state === "disconnected" ? "Disconnected; user switching and power changes are disabled."
-        : backend.state === "power" ? "Power request in progress; controls are disabled."
-        : backend.state === "loading" ? "Connecting; controls are not ready yet." : ""
+    readonly property string blockedReason: backend.closing ? qsTr("Closing after authentication cleanup…")
+        : backend.state === "starting" || backend.state === "handoff" ? qsTr("Session start is committed; user switching and power changes are disabled.")
+        : backend.state === "disconnected" ? qsTr("Disconnected; user switching and power changes are disabled.")
+        : backend.state === "power" ? qsTr("Power request in progress; controls are disabled.")
+        : backend.state === "loading" ? qsTr("Connecting; controls are not ready yet.") : ""
     // Presentation only: never use this snapshot to authorize an action or retain an answer.
     property var presentation: ({state: backend.state, prompt: backend.prompt, message: backend.message})
     property bool holdingTransition: false
@@ -68,7 +72,9 @@ ApplicationWindow {
     readonly property string selectedSession: session.currentText
     property string selectedUsername: ""
     readonly property var users: JSON.parse(backend.accounts).slice(0, 5)
-    readonly property var tiles: users.concat([{username: "", name: "More…", picture: ""}])
+    // key stays untranslated (tests and the Cage harness match it); only the
+    // displayed name is translated.
+    readonly property var tiles: users.concat([{username: "", key: "more", name: qsTr("More…"), picture: ""}])
     readonly property string loginUsername: selectedUsername || username.text
 
     function focusIdentity() {
@@ -178,8 +184,9 @@ ApplicationWindow {
         }
     }
     Label {
+        objectName: "cornerLabel"
         anchors { top: parent.top; left: parent.left; margins: theme.barMarginLeft }
-        text: root.backend.preview ? "PREVIEW · No system changes" : "SIGN IN · Wayland"
+        text: root.backend.preview ? qsTr("PREVIEW · No system changes") : qsTr("SIGN IN · Wayland")
         color: theme.textBar
         font { pixelSize: theme.scaled(11); letterSpacing: 1.2 }
     }
@@ -191,9 +198,9 @@ ApplicationWindow {
         height: 40
         model: root.backend.sessions
         enabled: !root.busy && !root.backend.closing
-        Accessible.name: "Desktop session"
+        Accessible.name: qsTr("Desktop session")
         ToolTip.visible: hovered || activeFocus
-        ToolTip.text: "Desktop session · Wayland"
+        ToolTip.text: qsTr("Desktop session · Wayland")
         ToolTip.delay: 700
         leftPadding: 14
         rightPadding: 32
@@ -255,6 +262,7 @@ ApplicationWindow {
     }
 
     Column {
+        objectName: "clockColumn"
         anchors { top: parent.top; topMargin: root.height * theme.clockTopRatio; horizontalCenter: parent.horizontalCenter }
         spacing: 0
         Label {
@@ -317,8 +325,8 @@ ApplicationWindow {
                     padding: 4
                     enabled: root.interactive && (!modelData.username || session.count > 0)
                     activeFocusOnTab: true
-                    Accessible.name: modelData.username ? modelData.name + " · " + modelData.username : "More… · Enter a username manually"
-                    Accessible.description: selected ? "Selected user" : "Choose user"
+                    Accessible.name: modelData.username ? modelData.name + " · " + modelData.username : qsTr("More… · Enter a username manually")
+                    Accessible.description: selected ? qsTr("Selected user") : qsTr("Choose user")
                     ToolTip {
                         id: userTip
                         objectName: "userTip"
@@ -386,7 +394,7 @@ ApplicationWindow {
                             Label {
                                 anchors.centerIn: parent
                                 visible: !tile.modelData.username
-                                text: "…"
+                                text: qsTr("…")
                                 color: theme.textPrimary
                                 font.pixelSize: theme.scaled(28)
                             }
@@ -436,14 +444,14 @@ ApplicationWindow {
                     Layout.preferredWidth: theme.fieldWidth
                     Layout.preferredHeight: theme.fieldHeight
                     visible: !root.selectedUsername && !root.layoutBusy
-                    placeholderText: "Username"
+                    placeholderText: qsTr("Username")
                     placeholderTextColor: theme.textPlaceholder
                     color: theme.textPrimary
                     enabled: !root.busy && !root.backend.closing
                     maximumLength: 256
                     leftPadding: 13
                     font { pixelSize: theme.scaled(18); weight: Font.DemiBold }
-                    Accessible.name: "Username"
+                    Accessible.name: qsTr("Username")
                     selectByMouse: true
                     background: Rectangle { radius: theme.fieldRadius; color: theme.fillRest; border.color: username.activeFocus ? theme.accent : "transparent" }
                     onAccepted: root.submit()
@@ -469,7 +477,7 @@ ApplicationWindow {
                 visible: !root.layoutBusy
                 enabled: !root.busy && !root.backend.closing && root.loginUsername.length > 0 && session.count > 0
                 text: "→"
-                Accessible.name: "Sign in"
+                Accessible.name: qsTr("Sign in")
                 onClicked: root.submit()
                 Keys.onReturnPressed: root.submit()
                 Keys.onEnterPressed: root.submit()
@@ -518,7 +526,7 @@ ApplicationWindow {
                 objectName: "password"
                 Layout.preferredWidth: 224
                 Layout.preferredHeight: theme.fieldHeight
-                placeholderText: root.backend.preview ? "Password" : "Enter answer"
+                placeholderText: root.backend.preview ? qsTr("Password") : qsTr("Enter answer")
                 placeholderTextColor: theme.textPlaceholder
                 color: theme.textPrimary
                 echoMode: root.backend.state === "secret" ? TextInput.Password : TextInput.Normal
@@ -530,7 +538,7 @@ ApplicationWindow {
                 font.pixelSize: theme.scaled(14)
                 leftPadding: 13
                 rightPadding: 13
-                Accessible.name: root.answering ? root.backend.prompt || "Authentication response" : "Authentication response"
+                Accessible.name: root.answering ? root.backend.prompt || qsTr("Authentication response") : qsTr("Authentication response")
                 background: Rectangle {
                     radius: theme.fieldRadius
                     color: theme.fillHover
@@ -546,7 +554,7 @@ ApplicationWindow {
                 Layout.preferredHeight: theme.fieldHeight
                 enabled: root.answering && !root.backend.closing
                 text: "→"
-                Accessible.name: "Submit answer"
+                Accessible.name: qsTr("Submit answer")
                 onClicked: root.submit()
                 Keys.onReturnPressed: root.submit()
                 Keys.onEnterPressed: root.submit()
@@ -570,7 +578,7 @@ ApplicationWindow {
             Layout.alignment: Qt.AlignHCenter
             visible: root.layoutAcknowledging
             enabled: root.acknowledging && !root.backend.closing
-            text: "Continue"
+            text: qsTr("Continue")
             onClicked: root.submit()
             Keys.onReturnPressed: root.submit()
             Keys.onEnterPressed: root.submit()
@@ -604,7 +612,7 @@ ApplicationWindow {
             visible: root.holdingTransition ? root.layoutAnswering || root.layoutAcknowledging
                 : root.cancellable || root.backend.state === "cancelling"
             enabled: root.cancellable || (root.interactive && root.backend.state === "cancelling")
-            text: "Cancel"
+            text: qsTr("Cancel")
             onClicked: root.reset()
         }
         }
@@ -615,10 +623,25 @@ ApplicationWindow {
         objectName: "confirmPower"
         property int action: 0
         anchors.centerIn: parent
-        title: action === 1 ? "Restart this computer?" : "Shut down this computer?"
+        title: action === 1 ? qsTr("Restart this computer?") : qsTr("Shut down this computer?")
         modal: true
         focus: true
-        standardButtons: Dialog.Yes | Dialog.No
+        // Explicit buttons: standardButtons' built-in texts do not translate.
+        // Tests match the objectNames, never the displayed text.
+        footer: DialogButtonBox {
+            Button {
+                objectName: "confirmNo"
+                text: qsTr("No")
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+                onClicked: confirmPower.reject()
+            }
+            Button {
+                objectName: "confirmYes"
+                text: qsTr("Yes")
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+                onClicked: confirmPower.accept()
+            }
+        }
         onAccepted: {
             if (root.interactive && (root.backend.capabilities & (1 << action)) !== 0)
                 root.backend.power(action);
@@ -631,21 +654,23 @@ ApplicationWindow {
         spacing: 30
         Repeater {
             objectName: "powerButtons"
+            // key stays untranslated so tests and the Cage harness keep matching
+            // the objectName; only the displayed label/tooltip translates.
             model: [
-                { label: "Sleep", icon: "icons/sleep.svg", action: 0 },
-                { label: "Restart", icon: "icons/restart.svg", action: 1 },
-                { label: "Shut Down", icon: "icons/power.svg", action: 2 }
+                { key: "Sleep", label: qsTr("Sleep"), icon: "icons/sleep.svg", action: 0 },
+                { key: "Restart", label: qsTr("Restart"), icon: "icons/restart.svg", action: 1 },
+                { key: "Shut Down", label: qsTr("Shut Down"), icon: "icons/power.svg", action: 2 }
             ]
             delegate: Button {
                 id: power
                 required property var modelData
-                objectName: modelData.label
+                objectName: modelData.key
                 Layout.preferredWidth: theme.powerSize
                 Layout.preferredHeight: theme.powerSize
                 padding: 10
                 text: modelData.label
                 enabled: root.interactive && (root.backend.capabilities & (1 << modelData.action)) !== 0
-                Accessible.name: text + (root.backend.preview ? " (preview only)" : "")
+                Accessible.name: text + (root.backend.preview ? qsTr(" (preview only)") : "")
                 ToolTip.visible: hovered || activeFocus
                 ToolTip.text: text
                 ToolTip.delay: 400
