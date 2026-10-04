@@ -7,6 +7,8 @@
 
 pub mod accounts;
 pub mod backend;
+pub mod config_backend;
+pub mod configd;
 pub mod controller;
 pub mod i18n;
 pub mod power;

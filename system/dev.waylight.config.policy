@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>Waylight</vendor>
+  <vendor_url>https://github.com/metalgrid/waylight</vendor_url>
+
+  <!-- Guards waylight-configd's SetTheme and SetLanguage. Active sessions
+       (someone at the physical seat) authenticate once and may re-apply for a
+       short window; remote and other-session callers are refused. -->
+  <action id="dev.waylight.config.set">
+    <description>Configure the Waylight login greeter</description>
+    <message>Authentication is required to change the Waylight greeter theme and language</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+</policyconfig>

@@ -1,0 +1,5 @@
+[D-BUS Service]
+Name=dev.waylight.Config
+Exec=/usr/bin/waylight-configd
+User=root
+SystemdService=waylight-configd.service

@@ -1,0 +1,21 @@
+[Unit]
+Description=Waylight greeter configuration service
+Documentation=https://github.com/metalgrid/waylight
+# Started on demand by D-Bus activation; no static enablement needed.
+
+[Service]
+Type=dbus
+BusName=dev.waylight.Config
+ExecStart=/usr/bin/waylight-configd
+Restart=on-failure
+# The daemon only writes /etc/waylight and talks on the system bus.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target
