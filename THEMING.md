@@ -130,3 +130,13 @@ reuse `fieldRadius`, so the answer row stays aligned with the fields.
 - Not themed: the embedded background and power-icon SVGs and the bundled demo portraits.
   The white power icons have low contrast on `daylight`; their hover and focus borders stay
   themed.
+
+## Editing with waylight-config
+
+The packaged configuration utility edits this file format through the privileged
+`waylight-configd` daemon (polkit-gated, atomic writes to `/etc/waylight`); see the
+"Configuration utility" section in the [README](README.md). Note one asymmetry: the
+greeter itself accepts a top-level `"preset"` key (the `Theme.qml` fail-open loader expands
+it), but the daemon's structural validation only accepts the `colors`, `background`, `font`
+and `layout` sections — the utility therefore expands a picked preset into concrete tokens
+before applying, and hand-written files for the daemon must do the same.

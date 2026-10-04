@@ -161,6 +161,78 @@ only. Themes apply at startup and presets can be switched at runtime by tests; t
 reload. Preset screenshots are produced only by the isolated offscreen QML tests into
 `/tmp/waylight-theme-checks/`.
 
+See also [`THEMING.md`](THEMING.md) for the token reference, clamping ranges and validation
+rules; the configuration utility below edits exactly those tokens.
+
+## Configuration utility (`waylight-config` + `waylight-configd`)
+
+The package ships three binaries:
+
+- `waylight-greeter` — the greeter itself (unchanged behavior and flags).
+- `waylight-configd` — a privileged, headless system D-Bus service that owns the system
+  configuration. Bus name `dev.waylight.Config`, object `/dev/waylight/Config`, interface
+  `dev.waylight.Config1`, methods `GetAll()`, `SetTheme(json)`, `SetLanguage(code)`.
+- `waylight-config` — a desktop GUI for editing the greeter's theme and language.
+
+### Using the GUI
+
+Run `waylight-config` from any desktop session:
+
+```sh
+waylight-config
+```
+
+- **Preset picker** (dusk / midnight / daylight) expands a preset into concrete tokens; the
+  daemon stores no `preset` key.
+- **Language picker** lists the eleven supported languages with native names and writes
+  `waylight.json` (`{"language": "ar"}`).
+- **Structured editors** cover the common tokens (accent, background mode and image path, font
+  family and scale, clock/panel ratios, panel width and tile/avatar sizes) with the same
+  clamped ranges the greeter enforces (ratios 0–0.9, sizes 1–2000 px, font scale 0.5–2.0). All
+  other tokens round-trip untouched.
+- **Raw JSON tab** edits the full `theme.json`; structural problems (unknown sections,
+  non-object sections, invalid JSON) are flagged before Apply, and the daemon re-validates.
+- **Live preview** embeds the greeter's own `Main.qml` in preview mode with the draft applied
+  in memory. Previewing never writes anything.
+- **Apply** sends `SetTheme`/`SetLanguage` to the daemon. polkit asks for authentication once
+  per short window (action `dev.waylight.config.set`, `auth_admin_keep` on an active seat;
+  remote/inactive sessions are refused). The daemon validates and writes atomically.
+  **Restart the greeter to see changes** — there is no hot reload; the new theme/language is
+  picked up at the next login screen start.
+- **Revert** re-reads the current system files from the daemon.
+
+The GUI's UI language follows the greeter's resolved language (translator + RTL mirroring);
+its own chrome currently ships English source strings (`qsTr`-wrapped for future catalogs),
+while the embedded preview is fully localized.
+
+### Where the files land
+
+The daemon (as root) writes only:
+
+- `/etc/waylight/theme.json` — the theme (sections `colors`, `background`, `font`, `layout`;
+  JSON object, ≤ 1 MiB). Created 0644 root:root; `/etc/waylight` is created 0755 if missing.
+- `/etc/waylight/waylight.json` — `{"language": "<code>"}`.
+
+Writes are atomic (temp file + rename + fsync), so the greeter never observes a partial file.
+Token-level validation stays fail-open inside the greeter (unknown keys are ignored, values
+are clamped); the daemon only rejects structurally invalid JSON and unknown top-level
+sections. The greeter still reads user-level files first (`${XDG_CONFIG_HOME:-$HOME/.config}/waylight/…`)
+with precedence over the system files; the utility manages the system layer.
+
+### Service wiring (packaged, declarative)
+
+- `/usr/share/polkit-1/actions/dev.waylight.config.policy` — the `dev.waylight.config.set`
+  action (`allow_active=auth_admin_keep`, `allow_inactive=no`, `allow_any=no`).
+- `/usr/share/dbus-1/system.d/dev.waylight.Config.conf` — only root may own the bus name;
+  everyone may call the daemon (privilege is polkit's job, per call).
+- `/usr/share/dbus-1/system-services/dev.waylight.Config.service` — D-Bus activation
+  (`Exec=/usr/bin/waylight-configd`, `User=root`).
+- `/usr/lib/systemd/system/waylight-configd.service` — `Type=dbus` unit; started on demand by
+  the activation, not enabled statically.
+
+The daemon touches nothing else: no greetd config, no PAM, no users, no services and no
+network. A live `pkexec`-style authorization test is a manual post-install step for the user.
+
 ## Authentication and lifecycle
 
 `src/controller.rs` owns the sole Unix socket on one background thread with a Tokio
