@@ -5,12 +5,12 @@
 
 pkgname=waylight-greeter
 pkgver=0.1.0
-pkgrel=2
+pkgrel=3
 pkgdesc="macOS-style Wayland login greeter for greetd (Rust + CXX-Qt, runs under cage)"
 arch=(x86_64)
 url="https://github.com/metalgrid/waylight"
 license=("GPL-3.0-only")
-depends=(greetd cage qt6-base qt6-declarative gcc-libs)
+depends=(greetd cage qt6-base qt6-declarative gcc-libs polkit dbus)
 makedepends=(git rust)
 checkdepends=()
 optdepends=("weston: additional wayland session for the session picker")
@@ -37,6 +37,8 @@ check() {
 package() {
   cd "$pkgname"
   install -Dm755 target/release/waylight-greeter -t "$pkgdir/usr/bin/"
+  install -Dm755 target/release/waylight-configd -t "$pkgdir/usr/bin/"
+  install -Dm755 target/release/waylight-config -t "$pkgdir/usr/bin/"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
   install -Dm644 THEMING.md "$pkgdir/usr/share/doc/$pkgname/THEMING.md"
@@ -48,6 +50,19 @@ package() {
     "$pkgdir/usr/share/doc/$pkgname/greetd.toml.example"
   # Declarative provisioning of the greeter state directory; no install
   # scripts. The greeter user comes from greetd's own sysusers.d snippet.
-  install -Dm644 "$startdir/waylight-greeter.tmpfiles" \
+  # Repo files come from the checked-out source, so the PKGBUILD is
+  # reproducible from the git tag alone.
+  install -Dm644 "$srcdir/$pkgname/packaging/waylight-greeter.tmpfiles" \
     "$pkgdir/usr/lib/tmpfiles.d/$pkgname.conf"
+  # Configuration utility: polkit action, D-Bus policy + activation and the
+  # systemd service for the privileged daemon. Nothing is enabled or started
+  # at install time; the daemon is D-Bus-activated on first use.
+  install -Dm644 "$srcdir/$pkgname/system/dev.waylight.config.policy" \
+    "$pkgdir/usr/share/polkit-1/actions/dev.waylight.config.policy"
+  install -Dm644 "$srcdir/$pkgname/system/dev.waylight.Config.conf" \
+    "$pkgdir/usr/share/dbus-1/system.d/dev.waylight.Config.conf"
+  install -Dm644 "$srcdir/$pkgname/system/dev.waylight.Config.service" \
+    "$pkgdir/usr/share/dbus-1/system-services/dev.waylight.Config.service"
+  install -Dm644 "$srcdir/$pkgname/system/waylight-configd.service" \
+    "$pkgdir/usr/lib/systemd/system/waylight-configd.service"
 }
