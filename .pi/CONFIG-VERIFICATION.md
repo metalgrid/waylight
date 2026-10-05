@@ -1,10 +1,151 @@
 # CONFIG-VERIFICATION
 
 > Evidence for `.pi/CONFIG-PLAN.md`. Gate: full `sh tests/check.sh` green after
-> every deliverable. Deliverable B is not started; greetd/PAM/SDDM, `/etc`, the
-> package files and `vm/` are untouched. No new runtime or build dependency:
-> Qt Linguist tools (`lupdate6`/`lrelease6`) are dev-time only and the catalogs
-> (`.ts` + `.qm`) are committed.
+> every deliverable. greetd/PAM/SDDM, `/etc`, the package files and `vm/` are
+> untouched. No new runtime or build dependency: Qt Linguist tools
+> (`lupdate6`/`lrelease6`) are dev-time only and the catalogs (`.ts` + `.qm`)
+> are committed.
+
+## Corrective pass (2026-10-05, on top of f4b7563)
+
+All fixes from the accepted architect reviews of Deliverables A and B, plus
+the packaging version bump. Nothing committed — the working tree is left for
+parent review. Full gate green **after** the pass (see Gate below).
+
+### B-fixes (config utility)
+
+1. **Daemon failure now surfaces in the GUI.** `ConfigMain.qml` used to keep
+   the local "Applying…"/"Reverting…" placeholder forever when the daemon
+   failed: the status label's binding preferred `localStatus`, and only the
+   color reacted to `status === "error"`. A new `Connections.onStatusChanged`
+   handler clears `localStatus` on any terminal daemon status (ready or
+   error), so `backend.message` (e.g. `InvalidTheme`) becomes visible. The
+   label got `objectName: "statusLabel"` for tests. New
+   `test_daemon_failure_surfaces_message_and_clears_applying` drives a mock
+   backend whose `applyTheme` mirrors the real flow (status → busy, then a
+   deferred Failed reply): it asserts the intermediate placeholder, the
+   clear-on-failure, the daemon error text in firebrick, and recovery on a
+   later successful apply.
+2. **`store.rs::commit` no longer leaks the temp file on a mid-write
+   failure.** `write_all`/`sync_all` errors now unlink the temp file exactly
+   like the rename-failure path. `commit_removes_the_temp_file_when_the_write_fails`
+   exercises the real failure path via `/dev/full` (ENOSPC on write) and
+   asserts no residue and no target.
+3. **Size cap aligned with the greeter: 1,048,576 → 1,000,000 bytes.**
+   `Theme.qml` ignores files over 1,000,000 *characters*; a ~1.01 MB file
+   used to pass the daemon yet was wholly ignored by the greeter. The daemon
+   now caps at the same 1,000,000 bytes (characters ≤ bytes in UTF-8, so a
+   daemon-accepted file can never be wholly ignored), the error message names
+   the exact limit, and `theme_enforces_the_size_cap` asserts the exact
+   boundary (exactly 1,000,000 bytes passes, one byte more is rejected).
+4. **Size-capped reads.** `store::read` (used by GetAll) now reads at most
+   1,000,000 bytes and hands out nothing for oversized files (symmetry with
+   `i18n::read_limited`; the one-byte-past-cap read detects oversize so no
+   truncated document is ever returned). `read_caps_the_size_and_fails_open`
+   covers missing/capped/oversized.
+5. **`system/waylight-configd.service` hardened:** explicit `User=root`,
+   `ProtectSystem=strict`, `ReadWritePaths=-/etc/waylight` (prefixed `-`: the
+   directory may not exist until the daemon creates it 0755),
+   `RestrictAddressFamilies=AF_UNIX` (system-bus socket only).
+6. **`ConfigMain.qml`'s previewBackend declares `signal identityChosen(string
+   name)`**, so Main.qml's `Connections` binds to a real signal instead of an
+   implicitly synthesized one.
+7. **`validate::config` documented** (kept, not dropped): the daemon always
+   writes the canonical `{"language": "<code>"}` form, so `config()` is not
+   on the daemon's write path; its doc comment now states it is the structural
+   contract for hand-written waylight.json.
+8. **This file corrected:** the real qmltestrunner arithmetic is recorded
+   below (the old text claimed 12 config tests / 56 = 44 + 12; tst_config had
+   10 tests before this pass, 11 after — qmltestrunner also counts each
+   suite's initTestCase/cleanupTestCase in its totals). The three documented
+   limitations the plan requires are in the B known-limitations list (two
+   were missing: structured-tab unknown-key behavior and the no-D-Bus-timeout
+   posture).
+
+### A-fixes (localization)
+
+9. **Clock locale follows the UI language.** `i18n::install_language` now
+   caches the resolved language (`i18n::installed_language`), the Backend
+   QObject exposes it as the `uiLanguage` qproperty, and both clock labels in
+   Main.qml format via
+   `now.toLocaleString(Qt.locale(backend.uiLanguage), …)` — the
+   locale-first overload (the `(date, format, locale)` form of
+   `Qt.formatDateTime` is not callable from Qt 6.11 QML and silently ignores
+   the format string in the `(date, locale, …)` shape; verified by probe).
+   `ConfigMain.qml`'s previewBackend and both test fakes gained the same
+   property (default "en") so bindings never break. New
+   `test_clock_formatting_follows_ui_language` pins the clock timer, fixes a
+   Monday, and asserts the date label switches to `bg` („януари") and the
+   time label to Arabic-Indic digits under `ar`, restoring for `en`. The
+   clock labels carry `clockDate`/`clockTime` objectNames and the wall-clock
+   timer `clockTimer`.
+10. **Cage harness isolation:** `WAYLIGHT_SKIP_SYSTEM_CONFIG=1` (consulted by
+    the new pure `backend::skip_system_config()` and a `skip_system` flag
+    parameter on both `theme_paths_json` and `config_language_json`) drops the
+    `/etc/waylight` candidates from both search lists; `tests/executable.py`
+    sets the variable in the harness environment next to the XDG isolation
+    (theme.json XHR reads are process-level — main.rs enables them in-process
+    — so the env var covers exactly the /etc coupling the translated-Cage runs
+    suffered from). The stale comment about `QML_XHR_ALLOW_FILE_READ` being
+    "deliberately NOT set" is corrected (main.rs sets it in-process now).
+    `skip_system_flag_drops_the_etc_candidates` covers both helpers including
+    the no-user-base case.
+11. **RTL cosmetics:** the session-picker chevron `x` is a mirrored binding
+    (`root.rtl ? 14 : session.width - width - 14`); tile
+    `Keys.onLeftPressed`/`onRightPressed` invert under RTL (Left moves to the
+    next tile in display order). `rtl` is a plain root property bound to
+    `Qt.application.layoutDirection === Qt.RightToLeft` (not readonly, so
+    tests can drive the RTL branches the same way they drive
+    `LayoutMirroring.enabled`). New
+    `test_rtl_inverts_tile_arrows_and_mirrors_chevron` asserts the chevron
+    edge and the inverted wrap behavior with two users + More…. French power
+    dialog titles now use U+00A0 before the question mark
+    ("Redémarrer cet ordinateur ?") and Bulgarian Continue is «Продължи»
+    (was «Напред») — fixed in the committed .ts, in the translations.py table
+    (so regeneration preserves them) and re-released into the .qm; locked by
+    the new `french_titles_keep_the_nbsp_before_the_question_mark` and
+    `bulgarian_continue_uses_the_standard_verb` Rust tests.
+12. **Docs:** README documents the waylight.json shape with supported codes,
+    the exact 1,000,000-byte cap, the hardened unit, and a new "Utility
+    behavior worth knowing" subsection (restart-required policy, no D-Bus
+    method timeout + Revert recovery, structured-tab unknown-key behavior,
+    clock locale). THEMING.md's size note states characters.
+
+### Packaging
+
+13. **`packaging/PKGBUILD`: `pkgver` 0.1.0 → 0.2.0, `pkgrel` 1** (resets with
+    the new version). The published source line stays
+    `$pkgname::git+$url.git#tag=v$pkgver`. For the local verification build
+    the source was pinned to a scratch git snapshot commit of exactly this
+    working tree (`git+file:///tmp/…#commit=d4cd221461ead8eacadc1343bce5095bb79fba0a`)
+    — the tree must stay uncommitted, so `#commit=<HEAD>` would have built
+    stale code. `makepkg -f` green; `waylight-greeter-0.2.0-1-x86_64.pkg.tar.zst`
+    contains the three binaries, the four system files (verified in the
+    tarball, including the hardened unit), tmpfiles and docs; the packaged
+    greeter binary embeds the new `WAYLIGHT_SKIP_SYSTEM_CONFIG` switch.
+    **Maintainer action after review:** `git tag v0.2.0 && git push origin
+    v0.2.0` — the published PKGBUILD resolves `v$pkgver` to that tag, and the
+    package is not reproducible from the published source line until it
+    exists.
+
+### Gate (after the corrective pass)
+
+- `sh tests/check.sh` — **exit 0**: `cargo fmt --check`, locked build, clippy
+  `-D warnings`, qmllint (five module files + four test files),
+  qmltestrunner, python harness (CLI/QML-load isolation + four headless Cage
+  cases, all translated-harness-neutral now that /etc cannot leak in).
+- **Real test totals:** 56 Rust tests (`cargo test --locked`, lib target;
+  was 51, +5: skip-system flag, temp-on-write-failure, capped read, fr NBSP,
+  bg Continue). 59 QML tests passed, 0 failed, 0 skipped — 51 test functions
+  (ConfigEditor 11, GreeterView 20, I18n 6, ThemeTokens 14) plus each suite's
+  initTestCase/cleanupTestCase, which qmltestrunner counts in its totals
+  (48 functions + 8 = 56 before this pass; tst_config had 10 functions, not
+  12 as previously claimed).
+- No system changes; `vm/` untouched; greetd/PAM/SDDM untouched; no new
+  dependencies (the `/dev/full` failure-path test and the env kill switch add
+  none).
+
+---
 
 ## Deliverable A — localization (complete 2026-10-04)
 
@@ -261,8 +402,9 @@
 
 ### B4 — tests
 
-- `tests/tst_config.qml` (qmltestrunner, 12 tests, offscreen, mocked
-  backend with the exact ConfigBackend surface): daemon load into editors
+- `tests/tst_config.qml` (qmltestrunner, 10 tests at the time of Deliverable
+  B — 11 after the corrective pass, which added the daemon-failure test;
+  offscreen, mocked backend with the exact ConfigBackend surface): daemon load into editors
   and language sync, serialization emits only the four known sections,
   preset expansion without a `preset` key (and unknown preset → dusk),
   clamping parity with the greeter, structural-problem messages, Apply
@@ -306,8 +448,11 @@
 
 - Full gate `sh tests/check.sh` — **green** (exit 0): fmt --check, locked
   build (three binaries), 51 Rust tests, clippy `-D warnings`, qmllint on
-  five module files + four test files, 56 QML tests (44 prior + 12 config),
-  CLI isolation, four headless Cage cases.
+  five module files + four test files, 56 QML tests, CLI isolation, four
+  headless Cage cases. (Totals corrected in the corrective-pass section:
+  the QML total was right, but the config share was 10 tests, not 12, and
+  qmltestrunner's totals include each suite's init/cleanup — 48 test
+  functions + 8.)
 - Offscreen GUI smoke: `QT_QPA_PLATFORM=offscreen` run for 10 s with the
   packaged (uninstalled) daemon absent — zero stderr, UI stays up, status
   line carries the daemon error; with `XDG_CONFIG_HOME` pointing at a
@@ -329,6 +474,13 @@
 - The GUI's own strings are English (`qsTr`-wrapped); the committed
   catalogs cover the `Main` context only. The preview window is fully
   localized.
+- The structured editors serialize exactly the known tokens into the four
+  known sections: unknown keys *inside* a known section are dropped when a
+  draft passes through the structured tab. The raw JSON tab round-trips
+  them untouched, and the greeter ignores unknown keys either way.
+- The D-Bus client has no method timeout: a hung `waylight-configd` leaves
+  the GUI busy (Apply disabled). Revert is the recovery; a genuinely stuck
+  daemon needs a systemctl restart outside the GUI.
 - `GetAll` is unauthenticated by design (reads only what any local user
   can already read); every mutation is polkit-gated.
 - The daemon binds `/etc/waylight` only; user-level config precedence
