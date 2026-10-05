@@ -4,8 +4,8 @@
 # This PKGBUILD never touches /etc/greetd, services, PAM or accounts.
 
 pkgname=waylight-greeter
-pkgver=0.1.0
-pkgrel=3
+pkgver=0.2.0
+pkgrel=1
 pkgdesc="macOS-style Wayland login greeter for greetd (Rust + CXX-Qt, runs under cage)"
 arch=(x86_64)
 url="https://github.com/metalgrid/waylight"
