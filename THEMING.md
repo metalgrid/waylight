@@ -124,7 +124,7 @@ reuse `fieldRadius`, so the answer row stays aligned with the fields.
 - `font.scale` clamps to 0.5–2.0; ratios to 0–0.9; pixels to 1–2000.
 - `background.image` must be an absolute local path (`/…`); it is stored as a `file://` URL.
   Remote URLs and relative paths keep the default empty image.
-- Theme files over 1 MiB are ignored, as if unreadable.
+- Theme files over 1,000,000 characters are ignored, as if unreadable.
 - Themes load once at startup. There is no hot reload; restart the greeter (or the preview)
   to apply changes.
 - Not themed: the embedded background and power-icon SVGs and the bundled demo portraits.

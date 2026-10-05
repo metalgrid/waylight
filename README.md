@@ -210,8 +210,11 @@ while the embedded preview is fully localized.
 The daemon (as root) writes only:
 
 - `/etc/waylight/theme.json` — the theme (sections `colors`, `background`, `font`, `layout`;
-  JSON object, ≤ 1 MiB). Created 0644 root:root; `/etc/waylight` is created 0755 if missing.
-- `/etc/waylight/waylight.json` — `{"language": "<code>"}`.
+  JSON object, up to 1,000,000 bytes — the greeter ignores larger files). Created 0644
+  root:root; `/etc/waylight` is created 0755 if missing.
+- `/etc/waylight/waylight.json` — `{"language": "<code>"}` with `code` one of the eleven
+  supported codes (`en zh hi es fr ar bn pt ru ur bg`). Any other content fails validation;
+  a hand-edited file must match the same shape, and unsupported codes fail open to English.
 
 Writes are atomic (temp file + rename + fsync), so the greeter never observes a partial file.
 Token-level validation stays fail-open inside the greeter (unknown keys are ignored, values
@@ -228,10 +231,28 @@ with precedence over the system files; the utility manages the system layer.
 - `/usr/share/dbus-1/system-services/dev.waylight.Config.service` — D-Bus activation
   (`Exec=/usr/bin/waylight-configd`, `User=root`).
 - `/usr/lib/systemd/system/waylight-configd.service` — `Type=dbus` unit; started on demand by
-  the activation, not enabled statically.
+  the activation, not enabled statically. Hardened to the daemon's actual needs: runs as
+  `root` with `ProtectSystem=strict` plus `ReadWritePaths=-/etc/waylight` (the only writable
+  path), `RestrictAddressFamilies=AF_UNIX` (system-bus socket only), `NoNewPrivileges`, and
+  the kernel/control-group protections.
 
 The daemon touches nothing else: no greetd config, no PAM, no users, no services and no
 network. A live `pkexec`-style authorization test is a manual post-install step for the user.
+
+### Utility behavior worth knowing
+
+- **Restart required.** Neither themes nor the language hot-reload: the greeter reads its
+  configuration once at startup. After Apply, restart the greeter (or reboot to the login
+  screen) to see the change — the same policy as hand-edited files.
+- **No D-Bus method timeout.** The GUI waits for the daemon's reply indefinitely; a hung
+  `waylight-configd` leaves the UI busy (Apply disabled). **Revert is the recovery** (and a
+  stuck daemon is a systemctl-restart matter, not a GUI one).
+- **Structured tab vs raw tab.** The structured editors serialize exactly the known tokens
+  into the four known sections; unknown keys *inside* a known section are dropped when a
+  draft passes through the structured tab. The raw JSON tab round-trips them untouched —
+  edit there if you rely on extra keys; the greeter ignores unknown keys either way.
+- **Clock locale.** The greeter formats the clock in the resolved UI language (month names
+  and digit rendering follow `waylight.json`, e.g. Arabic-Indic digits for `ar`).
 
 ## Authentication and lifecycle
 
