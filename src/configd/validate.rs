@@ -1,7 +1,8 @@
 //! Structural validation of the configuration files the daemon writes.
 //!
 //! Only structure is checked here: the text must parse as a JSON object, stay
-//! within the 1 MiB cap, and use only known top-level sections (`colors`,
+//! within the 1,000,000-byte cap (the greeter's own Theme.qml loadFile cap),
+//! and use only known top-level sections (`colors`,
 //! `background`, `font`, `layout` for theme.json; `language` for
 //! waylight.json). Token-level validation deliberately stays fail-open inside
 //! the greeter's `Theme.qml` — this daemon never duplicates that validator, so
@@ -11,15 +12,18 @@
 use crate::i18n::LANGUAGES;
 use serde_json::Value;
 
-// Matches Theme.qml's loadFile cap.
-pub const MAX_JSON_BYTES: usize = 1024 * 1024;
+// Matches Theme.qml's loadFile cap, which ignores any file over 1,000,000
+// responseText characters. The daemon caps the same size in bytes so a file
+// it accepts can never be wholly ignored by the greeter: UTF-8 characters
+// are at least one byte, so ≤ 1,000,000 bytes is always ≤ 1,000,000 chars.
+pub const MAX_JSON_BYTES: usize = 1_000_000;
 
 const THEME_SECTIONS: [&str; 4] = ["colors", "background", "font", "layout"];
 const CONFIG_SECTIONS: [&str; 1] = ["language"];
 
 fn object(json: &str, what: &str) -> Result<(), String> {
     if json.len() > MAX_JSON_BYTES {
-        return Err(format!("{what} is over the 1 MiB limit"));
+        return Err(format!("{what} is over the {MAX_JSON_BYTES}-byte limit"));
     }
     let value: Value =
         serde_json::from_str(json).map_err(|error| format!("{what} is not valid JSON: {error}"))?;
@@ -61,9 +65,14 @@ pub fn theme(json: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Structural validation for waylight.json: only the `language` key is
-/// known, and it must be a string (the supported codes are enforced when the
-/// value is set).
+/// Structural contract for hand-written waylight.json. The daemon itself
+/// always writes the canonical `{"language": "<code>"}` form (see
+/// `ConfigService::store_language`), so this check is not on the daemon's
+/// own write path: it exists as the documented structural contract a
+/// hand-edited file must satisfy for the greeter to pick it up (JSON object,
+/// only the `language` key, string value; the supported codes are enforced
+/// by `language` when a value is submitted through SetLanguage). The
+/// greeter's own reader stays fail-open and never calls this.
 pub fn config(json: &str) -> Result<(), String> {
     object(json, "config")?;
     sections(json, &CONFIG_SECTIONS, "config")?;
@@ -138,13 +147,28 @@ mod tests {
             "{{\"colors\": {{\"a\": \"{}\"}}}}",
             "x".repeat(MAX_JSON_BYTES)
         );
-        assert!(theme(&oversized).unwrap_err().contains("1 MiB limit"));
-        // A file just under the cap passes.
-        let undersized = format!(
-            "{{\"colors\": {{\"a\": \"{}\"}}}}",
-            "x".repeat(MAX_JSON_BYTES - 40)
+        assert!(
+            theme(&oversized)
+                .unwrap_err()
+                .contains("1000000-byte limit")
         );
-        assert_eq!(theme(&undersized), Ok(()));
+        // Exact boundary: a file of exactly MAX_JSON_BYTES bytes passes. It
+        // can never be wholly ignored by the greeter, whose cap only drops
+        // files over 1,000,000 characters (characters are at least one byte).
+        // The JSON wrapper around the payload is 21 bytes.
+        let exact = format!(
+            "{{\"colors\": {{\"a\": \"{}\"}}}}",
+            "x".repeat(MAX_JSON_BYTES - 21)
+        );
+        assert_eq!(exact.len(), MAX_JSON_BYTES);
+        assert_eq!(theme(&exact), Ok(()));
+        // One byte more is rejected.
+        let over = format!(
+            "{{\"colors\": {{\"a\": \"{}\"}}}}",
+            "x".repeat(MAX_JSON_BYTES - 20)
+        );
+        assert_eq!(over.len(), MAX_JSON_BYTES + 1);
+        assert!(theme(&over).is_err());
     }
 
     #[test]

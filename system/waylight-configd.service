@@ -6,12 +6,18 @@ Documentation=https://github.com/metalgrid/waylight
 [Service]
 Type=dbus
 BusName=dev.waylight.Config
+User=root
 ExecStart=/usr/bin/waylight-configd
 Restart=on-failure
-# The daemon only writes /etc/waylight and talks on the system bus.
+# The daemon only writes /etc/waylight and talks on the system bus (AF_UNIX).
+# ReadWritePaths is prefixed with - because /etc/waylight may not exist until
+# the daemon creates it 0755 on first write.
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=-/etc/waylight
+RestrictAddressFamilies=AF_UNIX
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes

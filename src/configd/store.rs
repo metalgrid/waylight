@@ -5,11 +5,13 @@
 
 use std::{
     fs::{self, File, OpenOptions, Permissions, create_dir_all, rename, set_permissions},
-    io::{self, Write},
+    io::{self, Read, Write},
     os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     process,
 };
+
+use super::validate::MAX_JSON_BYTES;
 
 pub const DIRECTORY_MODE: u32 = 0o755;
 pub const FILE_MODE: u32 = 0o644;
@@ -66,8 +68,16 @@ fn commit(
     contents: &str,
 ) -> io::Result<()> {
     let mut file = file;
-    file.write_all(contents.as_bytes())?;
-    file.sync_all()?;
+    // Any failure after the temp file exists must unlink it: the caller only
+    // sees an io::Result and has no handle to clean up with.
+    let written = file
+        .write_all(contents.as_bytes())
+        .and_then(|()| file.sync_all());
+    if let Err(error) = written {
+        drop(file);
+        let _ = fs::remove_file(temp);
+        return Err(error);
+    }
     drop(file);
     if let Err(error) = rename(temp, path) {
         let _ = fs::remove_file(temp);
@@ -90,10 +100,29 @@ fn sync_directory(directory: &Path) {
     }
 }
 
-/// Reads a file as UTF-8; missing or unreadable files read as empty, matching
-/// the greeter's fail-open handling of absent configuration.
+/// Reads a file as UTF-8, at most `MAX_JSON_BYTES` bytes. Missing, unreadable,
+/// oversized or non-UTF-8 files read as empty, matching the greeter's
+/// fail-open handling of absent configuration and Theme.qml's own loadFile cap:
+/// a file GetAll would hand out is always one the greeter will apply.
 pub fn read(path: &Path) -> String {
-    fs::read_to_string(path).unwrap_or_default()
+    let Ok(file) = fs::File::open(path) else {
+        return String::new();
+    };
+    // Read one byte beyond the cap so an oversized file is detected and
+    // dropped whole — the greeter ignores files over the same limit — instead
+    // of handing out a truncated document.
+    let mut bytes = Vec::new();
+    if file
+        .take(MAX_JSON_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .is_err()
+    {
+        return String::new();
+    }
+    if bytes.len() > MAX_JSON_BYTES {
+        return String::new();
+    }
+    String::from_utf8(bytes).unwrap_or_default()
 }
 
 /// The paths the packaged daemon manages. Tests inject their own.
@@ -196,6 +225,48 @@ mod tests {
         let broken = file_as_dir.join("theme.json");
         assert!(write_atomic(&broken, "x").is_err());
         assert_eq!(fs::read_to_string(&target).expect("read"), "original");
+    }
+
+    #[test]
+    fn commit_removes_the_temp_file_when_the_write_fails() {
+        // /dev/full accepts opens but fails every write with ENOSPC, so the
+        // mid-write failure path is exercised for real.
+        let file = OpenOptions::new()
+            .write(true)
+            .open("/dev/full")
+            .expect("/dev/full exists on Linux");
+        let dir = tempfile::tempdir().expect("tempdir");
+        // Simulate the temp file write_atomic would already have created.
+        let temp = dir.path().join(".theme.json.999.0.tmp");
+        fs::write(&temp, "residue").expect("seed temp");
+        let target = dir.path().join("theme.json");
+        let error = commit(file, &temp, &target, dir.path(), "contents")
+            .expect_err("writes to /dev/full fail");
+        assert_eq!(error.kind(), io::ErrorKind::StorageFull);
+        // The temp residue is gone and the target was never created.
+        let entries: Vec<_> = fs::read_dir(dir.path())
+            .expect("read_dir")
+            .map(|entry| entry.expect("entry").file_name())
+            .collect();
+        assert!(entries.is_empty(), "temp residue: {entries:?}");
+        assert!(!target.exists());
+    }
+
+    #[test]
+    fn read_caps_the_size_and_fails_open() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("theme.json");
+        // Missing file reads as empty (existing behavior).
+        assert_eq!(read(&path), "");
+        fs::write(&path, "{\"colors\": {}}").expect("write");
+        assert_eq!(read(&path), "{\"colors\": {}}");
+        // A file at the cap is read; anything larger reads as empty instead of
+        // handing the greeter a file it would wholly ignore.
+        let exact = format!("{}{}", "x".repeat(MAX_JSON_BYTES - 1), "\n");
+        fs::write(&path, &exact).expect("write");
+        assert_eq!(read(&path), exact);
+        fs::write(&path, "x".repeat(MAX_JSON_BYTES + 1)).expect("write");
+        assert_eq!(read(&path), "");
     }
 
     #[test]
