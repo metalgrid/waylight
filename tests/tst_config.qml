@@ -35,6 +35,16 @@ TestCase {
             property string storedConfig: JSON.stringify({language: "es"})
             property string appliedTheme: ""
             property var appliedLanguages: []
+            // Mirrors a daemon-side refusal: the request flips status to busy
+            // and the Failed reply is delivered only by deliverFailure(), so
+            // the test can observe the intermediate "Applying…" state.
+            property bool failNext: false
+            property string pendingFailure: ""
+            function deliverFailure() {
+                status = "error";
+                message = pendingFailure;
+                pendingFailure = "";
+            }
             function reload() {
                 // Mirror the daemon's GetAll: both properties change together.
                 // Assign through empty first so the changed signals always fire
@@ -45,11 +55,25 @@ TestCase {
                 config = storedConfig;
             }
             function applyTheme(json) {
+                status = "busy";
+                if (failNext) {
+                    pendingFailure = "SetTheme failed: dev.waylight.Config1.Error.InvalidTheme: theme has unknown section 'preset'";
+                    return;
+                }
                 appliedTheme = json;
+                status = "ready";
+                message = "Saved. Restart the greeter (or reboot to the login screen) to apply.";
                 applied();
             }
             function applyLanguage(code) {
+                status = "busy";
+                if (failNext) {
+                    pendingFailure = "SetLanguage failed: dev.waylight.Config1.Error.InvalidLanguage: unsupported language 'de'";
+                    return;
+                }
                 appliedLanguages = appliedLanguages.concat([code]);
+                status = "ready";
+                message = "Saved. Restart the greeter (or reboot to the login screen) to apply.";
                 applied();
             }
         }
@@ -179,6 +203,33 @@ TestCase {
         compare(String(themeObject.accent), "#112233");
         // The daemon file on disk is never touched by previewing.
         compare(ctx.backend.appliedTheme, "");
+    }
+
+    function test_daemon_failure_surfaces_message_and_clears_applying() {
+        const ctx = setup(); const window = ctx.window; const backend = ctx.backend;
+        const label = findChild(window, "statusLabel");
+        verify(label);
+        // Language stays as loaded, so Apply sends exactly one daemon call.
+        window.languageCode = window.loadedLanguage;
+        backend.failNext = true;
+        window.apply();
+        // While the daemon works, the placeholder is all the user sees.
+        compare(backend.status, "busy");
+        compare(window.localStatus, "Applying…");
+        compare(label.text, "Applying…");
+        // The daemon refuses (e.g. polkit denial or invalid theme): the Failed
+        // reply must clear the placeholder and surface the daemon message.
+        backend.deliverFailure();
+        tryCompare(window, "localStatus", "");
+        compare(label.text, backend.message);
+        verify(label.text.includes("InvalidTheme"), label.text);
+        compare(label.color, "#b22222"); // firebrick, resolved
+        // A later successful apply recovers to a normal status line.
+        backend.failNext = false;
+        window.apply();
+        tryCompare(label, "text", backend.message);
+        verify(label.text.includes("Saved"), label.text);
+        compare(window.localStatus, "");
     }
 
     function test_language_picker_lists_native_names() {

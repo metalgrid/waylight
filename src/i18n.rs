@@ -9,7 +9,7 @@
 // reported to the caller instead of being fatal.
 
 use cxx_qt_lib::QString;
-use std::{io::Read, path::Path, path::PathBuf};
+use std::{io::Read, path::Path, path::PathBuf, sync::OnceLock};
 
 pub const LANGUAGES: [&str; 11] = [
     "en", "zh", "hi", "es", "fr", "ar", "bn", "pt", "ru", "ur", "bg",
@@ -62,10 +62,20 @@ pub fn resolve_language(candidates: &[PathBuf]) -> &'static str {
     "en"
 }
 
+static RESOLVED: OnceLock<&'static str> = OnceLock::new();
+
+/// The language `install_language` resolved for this process; "en" before it
+/// runs. QML reads this through the Backend's `uiLanguage` property so the
+/// clock and other locale-sensitive formatting follow the chosen language.
+pub fn installed_language() -> &'static str {
+    RESOLVED.get().copied().unwrap_or("en")
+}
+
 /// Installs the translator and layout direction before the QML engine loads.
 /// A missing catalog keeps English with a warning; nothing here is fatal.
 pub fn install_language(paths_json: &str) -> &'static str {
     let language = resolve_language(&language_candidates(paths_json));
+    let _ = RESOLVED.set(language);
     if language != "en" {
         let path = format!(":/qt/qml/Waylight/i18n/waylight_{language}.qm");
         if !ffi::waylight_install_translator(&QString::from(path)) {
@@ -151,6 +161,25 @@ mod tests {
             translate("ar", "Shut down this computer?"),
             "إيقاف تشغيل هذا الحاسوب؟"
         );
+    }
+
+    #[test]
+    fn french_titles_keep_the_nbsp_before_the_question_mark() {
+        // French typography: U+00A0 before "?", so the mark can never wrap
+        // onto its own line in the power dialog.
+        assert_eq!(
+            translate("fr", "Restart this computer?"),
+            "Redémarrer cet ordinateur\u{00a0}?"
+        );
+        assert_eq!(
+            translate("fr", "Shut down this computer?"),
+            "Éteindre cet ordinateur\u{00a0}?"
+        );
+    }
+
+    #[test]
+    fn bulgarian_continue_uses_the_standard_verb() {
+        assert_eq!(translate("bg", "Continue"), "Продължи");
     }
 
     #[test]

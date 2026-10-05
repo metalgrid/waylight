@@ -25,6 +25,9 @@ TestCase {
             property string accounts: "[]"
             property bool closing: false
             property string themePaths: "[]"
+            // Real Backend exposes the resolved UI language for locale-aware
+            // formatting (the greeter clock).
+            property string uiLanguage: "en"
             signal identityChosen(string name)
             function choose_user(name, index) {}
             function choose_manual() {}
@@ -202,5 +205,67 @@ TestCase {
         const tiles = findChild(window, "userTiles");
         compare(tiles.itemAt(0).modelData.username, "");
         compare(tiles.itemAt(0).modelData.key, "more");
+    }
+
+    function test_clock_formatting_follows_ui_language() {
+        const ctx = setup(); const window = ctx.window; const backend = ctx.backend;
+        // The real Backend exposes the resolved language; the fake starts at
+        // the English default.
+        compare(backend.uiLanguage, "en");
+        const date = findChild(window, "clockDate");
+        const time = findChild(window, "clockTime");
+        verify(date && time);
+        // Pin the displayed instant: stop the wall-clock timer first.
+        findChild(window, "clockTimer").stop();
+        // A fixed Monday so weekday and month names are stable.
+        window.now = new Date(2026, 0, 5, 10, 30);
+        compare(date.text, "Monday, January 5");
+        // Production binds the locale to backend.uiLanguage; switching to a
+        // language whose month rendering differs must change the text.
+        backend.uiLanguage = "bg";
+        compare(date.text, window.now.toLocaleString(Qt.locale("bg"), "dddd, MMMM d"));
+        verify(date.text !== "Monday, January 5");
+        verify(date.text.includes("януари"), date.text);
+        // hh:mm is digit rendering: bg stays Latin digits, ar uses Arabic-Indic.
+        compare(time.text, "10:30");
+        backend.uiLanguage = "ar";
+        compare(time.text, window.now.toLocaleString(Qt.locale("ar"), "hh:mm"));
+        verify(time.text !== "10:30", time.text);
+        backend.uiLanguage = "en";
+        compare(date.text, "Monday, January 5");
+        compare(time.text, "10:30");
+    }
+
+    function test_rtl_inverts_tile_arrows_and_mirrors_chevron() {
+        const ctx = setup(); const window = ctx.window; const backend = ctx.backend;
+        const session = findChild(window, "session");
+        verify(session.indicator);
+        // LTR: the chevron sits near the right edge.
+        compare(session.indicator.x, session.width - session.indicator.width - 14);
+        // Two real users + the More… tile.
+        backend.accounts = JSON.stringify([
+            {username: "ana", name: "Ana", picture: ""},
+            {username: "ben", name: "Ben", picture: ""}
+        ]);
+        const tiles = findChild(window, "userTiles");
+        tryCompare(tiles, "count", 3);
+        // LTR: Left wraps from the first tile to the last.
+        tiles.itemAt(0).forceActiveFocus();
+        tryCompare(tiles.itemAt(0), "activeFocus", true);
+        keyClick(Qt.Key_Left);
+        tryCompare(tiles.itemAt(2), "activeFocus", true);
+        // RTL: arrows invert — Left moves to the next tile in display order.
+        window.rtl = true;
+        compare(session.indicator.x, 14);
+        tiles.itemAt(0).forceActiveFocus();
+        keyClick(Qt.Key_Left);
+        tryCompare(tiles.itemAt(1), "activeFocus", true);
+        tiles.itemAt(0).forceActiveFocus();
+        keyClick(Qt.Key_Right);
+        tryCompare(tiles.itemAt(2), "activeFocus", true);
+        window.rtl = false;
+        compare(session.indicator.x, session.width - session.indicator.width - 14);
+        backend.accounts = "[]";
+        tryCompare(tiles, "count", 1);
     }
 }

@@ -21,6 +21,10 @@ ApplicationWindow {
 
     required property var backend
     property bool closingAllowed: false
+    // Presentation direction: the greeter resolves ar/ur to RightToLeft in
+    // Rust before the engine loads. Plain property (not readonly) so tests can
+    // drive the RTL branches the same way they drive LayoutMirroring.enabled.
+    property bool rtl: Qt.application.layoutDirection === Qt.RightToLeft
     readonly property bool busy: backend.state !== "idle"
     readonly property bool answering: backend.state === "secret" || backend.state === "visible"
     readonly property bool acknowledging: backend.state === "info" || backend.state === "error"
@@ -141,6 +145,7 @@ ApplicationWindow {
     }
 
     Timer {
+        objectName: "clockTimer"
         interval: 1000
         running: true
         repeat: true
@@ -213,7 +218,8 @@ ApplicationWindow {
             elide: Text.ElideRight
         }
         indicator: Label {
-            x: session.width - width - 14
+            // Mirrored under RTL: the chevron sits near the text's end edge.
+            x: root.rtl ? 14 : session.width - width - 14
             anchors.verticalCenter: parent.verticalCenter
             text: "⌄"
             color: theme.textCombo
@@ -266,14 +272,18 @@ ApplicationWindow {
         anchors { top: parent.top; topMargin: root.height * theme.clockTopRatio; horizontalCenter: parent.horizontalCenter }
         spacing: 0
         Label {
+            objectName: "clockDate"
             anchors.horizontalCenter: parent.horizontalCenter
-            text: Qt.formatDateTime(root.now, "dddd, MMMM d")
+            // Locale-sensitive rendering (day/month names, digits) follows the
+            // UI language resolved in Rust and exposed as uiLanguage.
+            text: root.now.toLocaleString(Qt.locale(root.backend.uiLanguage), "dddd, MMMM d")
             color: theme.textDate
             font { pixelSize: theme.scaled(theme.clockDateSize); weight: Font.Medium }
         }
         Label {
+            objectName: "clockTime"
             anchors.horizontalCenter: parent.horizontalCenter
-            text: Qt.formatDateTime(root.now, "hh:mm")
+            text: root.now.toLocaleString(Qt.locale(root.backend.uiLanguage), "hh:mm")
             color: theme.textBright
             font { pixelSize: Math.min(theme.scaled(theme.clockTimeCap), root.height * 0.135); weight: Font.DemiBold; letterSpacing: -3 }
         }
@@ -345,8 +355,8 @@ ApplicationWindow {
                     onClicked: root.chooseUser(modelData.username)
                     Keys.onReturnPressed: root.chooseUser(modelData.username)
                     Keys.onEnterPressed: root.chooseUser(modelData.username)
-                    Keys.onLeftPressed: userTiles.itemAt((index + userTiles.count - 1) % userTiles.count).forceActiveFocus()
-                    Keys.onRightPressed: userTiles.itemAt((index + 1) % userTiles.count).forceActiveFocus()
+                    Keys.onLeftPressed: userTiles.itemAt((index + (root.rtl ? 1 : userTiles.count - 1)) % userTiles.count).forceActiveFocus()
+                    Keys.onRightPressed: userTiles.itemAt((index + (root.rtl ? userTiles.count - 1 : 1)) % userTiles.count).forceActiveFocus()
                     Keys.onPressed: function(event) {
                         if (event.key === Qt.Key_Home || event.key === Qt.Key_End) {
                             userTiles.itemAt(event.key === Qt.Key_Home ? 0 : userTiles.count - 1).forceActiveFocus();

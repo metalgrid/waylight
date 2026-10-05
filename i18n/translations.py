@@ -64,7 +64,7 @@ TABLE = {
     },
     "Continue": {
         "zh": "继续", "hi": "जारी रखें", "es": "Continuar", "fr": "Continuer", "ar": "متابعة",
-        "bn": "চালিয়ে যান", "pt": "Continuar", "ru": "Продолжить", "ur": "جاری رکھیں", "bg": "Напред",
+        "bn": "চালিয়ে যান", "pt": "Continuar", "ru": "Продолжить", "ur": "جاری رکھیں", "bg": "Продължи",
     },
     "Desktop session": {
         "zh": "桌面会话", "hi": "डेस्कटॉप सत्र", "es": "Sesión de escritorio", "fr": "Session de bureau",
@@ -148,7 +148,7 @@ TABLE = {
     },
     "Restart this computer?": {
         "zh": "重新启动这台计算机？", "hi": "इस कंप्यूटर को पुनः आरंभ करें?",
-        "es": "¿Reiniciar este equipo?", "fr": "Redémarrer cet ordinateur ?",
+        "es": "¿Reiniciar este equipo?", "fr": "Redémarrer cet ordinateur ?",
         "ar": "إعادة تشغيل هذا الحاسوب؟", "bn": "এই কম্পিউটার রিস্টার্ট করবেন?",
         "pt": "Reiniciar este computador?", "ru": "Перезагрузить этот компьютер?",
         "ur": "اس کمپیوٹر کو دوبارہ شروع کریں؟", "bg": "Рестартиране на компютъра?",
@@ -173,7 +173,7 @@ TABLE = {
     },
     "Shut down this computer?": {
         "zh": "关闭这台计算机？", "hi": "इस कंप्यूटर को बंद करें?",
-        "es": "¿Apagar este equipo?", "fr": "Éteindre cet ordinateur ?",
+        "es": "¿Apagar este equipo?", "fr": "Éteindre cet ordinateur ?",
         "ar": "إيقاف تشغيل هذا الحاسوب؟", "bn": "এই কম্পিউটার বন্ধ করবেন?",
         "pt": "Desligar este computador?", "ru": "Выключить этот компьютер?",
         "ur": "اس کمپیوٹر کو بند کریں؟", "bg": "Изключване на компютъра?",

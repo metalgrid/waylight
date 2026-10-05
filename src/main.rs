@@ -118,6 +118,7 @@ fn main() -> std::process::ExitCode {
     let config_paths = backend::config_language_json(
         std::env::var_os("XDG_CONFIG_HOME").as_deref(),
         std::env::var_os("HOME").as_deref(),
+        backend::skip_system_config(),
     );
     i18n::install_language(&config_paths);
     let mut engine = QQmlApplicationEngine::new();

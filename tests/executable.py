@@ -161,7 +161,11 @@ def main():
         flags = subprocess.check_output(["pkg-config", "--cflags", "--libs", "wayland-client", "xkbcommon"], text=True).split()
         subprocess.run(["cc", "-Wall", "-Wextra", "-Werror", str(project / "tests/keyboard.c"), "-o", str(keyboard), *flags], check=True)
         env = os.environ.copy()
-        env.update(QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software", DBUS_SYSTEM_BUS_ADDRESS=f"unix:path={root}/no-system-bus", HOME=str(root), XDG_CACHE_HOME=str(root / "cache"), XDG_CONFIG_HOME=str(root / "config"))
+        # WAYLIGHT_SKIP_SYSTEM_CONFIG=1 drops the /etc/waylight candidates from
+        # both theme and language search lists, so no run couples to the host's
+        # system configuration (the translated-Cage harness would otherwise
+        # observe a developer's system waylight.json and break Atspi matches).
+        env.update(QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software", DBUS_SYSTEM_BUS_ADDRESS=f"unix:path={root}/no-system-bus", HOME=str(root), XDG_CACHE_HOME=str(root / "cache"), XDG_CONFIG_HOME=str(root / "config"), WAYLIGHT_SKIP_SYSTEM_CONFIG="1")
         env.pop("GREETD_SOCK", None)
         for args in [[], ["--unknown"], ["--help", "--unknown"], ["--preview", "--preview"], ["--preview", "--state-dir", str(root)]]:
             result = subprocess.run([str(copied), *args], env=env, cwd="/", capture_output=True, timeout=5)
@@ -260,10 +264,13 @@ def main():
                     (case / "failure").write_text(detail)
             thread = threading.Thread(target=daemon)
             thread.start()
-            # QML_XHR_ALLOW_FILE_READ is deliberately NOT set: without it the
-            # greeter's theme XHR fails and the defaults apply, so headless
-            # Cage runs stay deterministic and cannot couple to a developer's
-            # ~/.config or /etc/waylight/theme.json.
+            # QML_XHR_ALLOW_FILE_READ needs no harness handling: main.rs sets
+            # it in-process before the engine loads, so the theme read is
+            # process-level, not something this harness can or should toggle.
+            # Isolation comes from the env above: the user config path is
+            # covered by the private HOME/XDG_CONFIG_HOME, and
+            # WAYLIGHT_SKIP_SYSTEM_CONFIG=1 removes the /etc/waylight
+            # candidates entirely, so headless Cage runs stay deterministic.
             child_env = env | {
                 "QT_QPA_PLATFORM": "wayland", "WLR_BACKENDS": "headless", "WLR_RENDERER": "pixman",
                 "QT_LINUX_ACCESSIBILITY_ALWAYS_ON": "1", "XDG_CURRENT_DESKTOP": "",

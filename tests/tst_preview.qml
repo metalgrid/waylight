@@ -22,6 +22,9 @@ TestCase {
             property bool closing: false
             // Real Backend exposes this as a JSON array string of theme paths.
             property string themePaths: "[]"
+            // Real Backend exposes the resolved UI language for locale-aware
+            // formatting (the greeter clock).
+            property string uiLanguage: "en"
             signal identityChosen(string name)
             property int begins: 0
             property int cancels: 0

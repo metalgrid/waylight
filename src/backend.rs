@@ -18,23 +18,36 @@ pub struct Bridge {
 }
 pub static BRIDGE: OnceLock<Mutex<Option<Bridge>>> = OnceLock::new();
 
-/// Ordered theme.json candidates: the user's config directory first, then the
-/// system path. Pure helper taking environment values as parameters so tests
-/// never mutate the environment. QML parses this JSON array and loads the
-/// first readable file; presentation only, never an authentication input.
-fn theme_paths_json(xdg_config_home: Option<&OsStr>, home: Option<&OsStr>) -> String {
-    let mut paths = Vec::new();
-    let user = xdg_config_home
+/// The user config base directory, mirroring the XDG spec: XDG_CONFIG_HOME
+/// when set and non-empty, else $HOME/.config. Shared by both path helpers.
+fn user_config_base(xdg_config_home: Option<&OsStr>, home: Option<&OsStr>) -> Option<PathBuf> {
+    xdg_config_home
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
         .or_else(|| {
             home.filter(|value| !value.is_empty())
                 .map(|home| PathBuf::from(home).join(".config"))
-        });
-    if let Some(base) = user {
+        })
+}
+
+/// Ordered theme.json candidates: the user's config directory first, then the
+/// system path. Pure helper taking environment values as parameters so tests
+/// never mutate the environment. `skip_system` drops the /etc candidate (test
+/// harness isolation; see skip_system_config). QML parses this JSON array and
+/// loads the first readable file; presentation only, never an authentication
+/// input.
+fn theme_paths_json(
+    xdg_config_home: Option<&OsStr>,
+    home: Option<&OsStr>,
+    skip_system: bool,
+) -> String {
+    let mut paths = Vec::new();
+    if let Some(base) = user_config_base(xdg_config_home, home) {
         paths.push(base.join("waylight").join("theme.json"));
     }
-    paths.push(PathBuf::from("/etc/waylight/theme.json"));
+    if !skip_system {
+        paths.push(PathBuf::from("/etc/waylight/theme.json"));
+    }
     let encoded: Vec<String> = paths
         .iter()
         .map(|path| path.to_string_lossy().into_owned())
@@ -44,26 +57,33 @@ fn theme_paths_json(xdg_config_home: Option<&OsStr>, home: Option<&OsStr>) -> St
 
 /// Ordered waylight.json candidates, mirroring theme_paths_json. Pure helper
 /// taking environment values as parameters so tests never mutate the
-/// environment. main.rs resolves the UI language from the first readable
-/// candidate; presentation only, never an authentication input.
-pub fn config_language_json(xdg_config_home: Option<&OsStr>, home: Option<&OsStr>) -> String {
+/// environment; `skip_system` drops the /etc candidate. main.rs resolves the
+/// UI language from the first readable candidate; presentation only, never an
+/// authentication input.
+pub fn config_language_json(
+    xdg_config_home: Option<&OsStr>,
+    home: Option<&OsStr>,
+    skip_system: bool,
+) -> String {
     let mut paths = Vec::new();
-    let user = xdg_config_home
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| {
-            home.filter(|value| !value.is_empty())
-                .map(|home| PathBuf::from(home).join(".config"))
-        });
-    if let Some(base) = user {
+    if let Some(base) = user_config_base(xdg_config_home, home) {
         paths.push(base.join("waylight").join("waylight.json"));
     }
-    paths.push(PathBuf::from("/etc/waylight/waylight.json"));
+    if !skip_system {
+        paths.push(PathBuf::from("/etc/waylight/waylight.json"));
+    }
     let encoded: Vec<String> = paths
         .iter()
         .map(|path| path.to_string_lossy().into_owned())
         .collect();
     serde_json::to_string(&encoded).expect("path list serialization cannot fail")
+}
+
+/// Test-only isolation switch (WAYLIGHT_SKIP_SYSTEM_CONFIG=1): drops the
+/// /etc/waylight candidates from both search lists so harnesses never couple
+/// to the host's system configuration. The packaged greeter never sets it.
+pub fn skip_system_config() -> bool {
+    std::env::var_os("WAYLIGHT_SKIP_SYSTEM_CONFIG").as_deref() == Some(OsStr::new("1"))
 }
 
 #[cxx_qt::bridge]
@@ -96,6 +116,7 @@ pub mod ffi {
         #[qproperty(bool, closing)]
         #[qproperty(QString, theme_paths, cxx_name = "themePaths")]
         #[qproperty(QString, config_paths, cxx_name = "configPaths")]
+        #[qproperty(QString, ui_language, cxx_name = "uiLanguage")]
         type Backend = super::BackendRust;
         #[qinvokable]
         fn poll(self: Pin<&mut Backend>);
@@ -157,6 +178,7 @@ pub struct BackendRust {
     closing: bool,
     theme_paths: QString,
     config_paths: QString,
+    ui_language: QString,
     pending: Option<Intent>,
 }
 impl Default for BackendRust {
@@ -184,11 +206,15 @@ impl Default for BackendRust {
             theme_paths: QString::from(theme_paths_json(
                 std::env::var_os("XDG_CONFIG_HOME").as_deref(),
                 std::env::var_os("HOME").as_deref(),
+                skip_system_config(),
             )),
             config_paths: QString::from(config_language_json(
                 std::env::var_os("XDG_CONFIG_HOME").as_deref(),
                 std::env::var_os("HOME").as_deref(),
+                skip_system_config(),
             )),
+            // Resolved by install_language before the engine loaded.
+            ui_language: QString::from(crate::i18n::installed_language()),
             pending: None,
         }
     }
@@ -448,27 +474,34 @@ mod tests {
     fn theme_paths_search_order_is_user_then_system() {
         let system = "/etc/waylight/theme.json";
         assert_eq!(
-            theme_paths_json(Some(OsStr::new("/custom/cfg")), Some(OsStr::new("/home/u"))),
+            theme_paths_json(
+                Some(OsStr::new("/custom/cfg")),
+                Some(OsStr::new("/home/u")),
+                false
+            ),
             format!("[\"/custom/cfg/waylight/theme.json\",\"{system}\"]")
         );
         // An empty XDG_CONFIG_HOME falls back to $HOME/.config.
         assert_eq!(
-            theme_paths_json(Some(OsStr::new("")), Some(OsStr::new("/home/u"))),
+            theme_paths_json(Some(OsStr::new("")), Some(OsStr::new("/home/u")), false),
             format!("[\"/home/u/.config/waylight/theme.json\",\"{system}\"]")
         );
         assert_eq!(
-            theme_paths_json(None, Some(OsStr::new("/home/u"))),
+            theme_paths_json(None, Some(OsStr::new("/home/u")), false),
             format!("[\"/home/u/.config/waylight/theme.json\",\"{system}\"]")
         );
         // Without any usable user base only the system path remains.
-        assert_eq!(theme_paths_json(None, None), format!("[\"{system}\"]"));
         assert_eq!(
-            theme_paths_json(Some(OsStr::new("")), Some(OsStr::new(""))),
+            theme_paths_json(None, None, false),
+            format!("[\"{system}\"]")
+        );
+        assert_eq!(
+            theme_paths_json(Some(OsStr::new("")), Some(OsStr::new("")), false),
             format!("[\"{system}\"]")
         );
         // JSON escaping survives unusual but legal directory names.
         assert_eq!(
-            theme_paths_json(Some(OsStr::new("/a\"b\\c")), None),
+            theme_paths_json(Some(OsStr::new("/a\"b\\c")), None, false),
             "[\"/a\\\"b\\\\c/waylight/theme.json\",\"/etc/waylight/theme.json\"]"
         );
     }
@@ -477,23 +510,46 @@ mod tests {
     fn config_paths_search_order_is_user_then_system() {
         let system = "/etc/waylight/waylight.json";
         assert_eq!(
-            config_language_json(Some(OsStr::new("/custom/cfg")), Some(OsStr::new("/home/u"))),
+            config_language_json(
+                Some(OsStr::new("/custom/cfg")),
+                Some(OsStr::new("/home/u")),
+                false
+            ),
             format!("[\"/custom/cfg/waylight/waylight.json\",\"{system}\"]")
         );
         // An empty XDG_CONFIG_HOME falls back to $HOME/.config.
         assert_eq!(
-            config_language_json(Some(OsStr::new("")), Some(OsStr::new("/home/u"))),
+            config_language_json(Some(OsStr::new("")), Some(OsStr::new("/home/u")), false),
             format!("[\"/home/u/.config/waylight/waylight.json\",\"{system}\"]")
         );
         assert_eq!(
-            config_language_json(None, Some(OsStr::new("/home/u"))),
+            config_language_json(None, Some(OsStr::new("/home/u")), false),
             format!("[\"/home/u/.config/waylight/waylight.json\",\"{system}\"]")
         );
         // Without any usable user base only the system path remains.
-        assert_eq!(config_language_json(None, None), format!("[\"{system}\"]"));
         assert_eq!(
-            config_language_json(Some(OsStr::new("")), Some(OsStr::new(""))),
+            config_language_json(None, None, false),
             format!("[\"{system}\"]")
         );
+        assert_eq!(
+            config_language_json(Some(OsStr::new("")), Some(OsStr::new("")), false),
+            format!("[\"{system}\"]")
+        );
+    }
+
+    #[test]
+    fn skip_system_flag_drops_the_etc_candidates() {
+        // Harness isolation: with the flag set only the user candidate stays,
+        // in both lists, and an absent user base yields an empty list.
+        assert_eq!(
+            theme_paths_json(Some(OsStr::new("/cfg")), Some(OsStr::new("/home/u")), true),
+            "[\"/cfg/waylight/theme.json\"]"
+        );
+        assert_eq!(
+            config_language_json(Some(OsStr::new("/cfg")), Some(OsStr::new("/home/u")), true),
+            "[\"/cfg/waylight/waylight.json\"]"
+        );
+        assert_eq!(theme_paths_json(None, None, true), "[]");
+        assert_eq!(config_language_json(None, None, true), "[]");
     }
 }

@@ -209,6 +209,12 @@ ApplicationWindow {
         function onThemeChanged() { root.loadFromDaemon(); }
         function onConfigChanged() { root.loadFromDaemon(); }
         function onApplied() { root.backend.reload(); }
+        // A terminal daemon reply (ready or error) ends the local
+        // "Applying…"/"Reverting…" placeholder so the daemon's own message —
+        // in particular a validation failure — becomes visible.
+        function onStatusChanged() {
+            if (root.backend.status !== "busy") root.localStatus = "";
+        }
     }
 
     // --- live preview -------------------------------------------------------
@@ -227,6 +233,10 @@ ApplicationWindow {
         property string accounts: "[]"
         property bool closing: false
         property string themePaths: "[]"
+        // Same surface as the real Backend: the resolved UI language drives
+        // the preview clock's locale-sensitive rendering.
+        property string uiLanguage: "en"
+        signal identityChosen(string name)
         function begin(name, index) {}
         function answer(text) {}
         function cancel() {}
@@ -284,6 +294,7 @@ ApplicationWindow {
                 font.pixelSize: 16
             }
             Label {
+                objectName: "statusLabel"
                 Layout.fillWidth: true
                 elide: Text.ElideMiddle
                 text: root.localStatus !== "" ? root.localStatus
@@ -588,7 +599,7 @@ ApplicationWindow {
                     color: palette.placeholderText
                     wrapMode: Text.WordWrap
                     Layout.fillWidth: true
-                    text: qsTr("The daemon accepts the colors, background, font and layout sections (≤ 1 MiB); the greeter ignores unknown keys and clamps values.")
+                    text: qsTr("The daemon accepts the colors, background, font and layout sections (up to 1,000,000 bytes); the greeter ignores unknown keys and clamps values.")
                 }
             }
         }
